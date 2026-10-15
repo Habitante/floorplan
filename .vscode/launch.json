@@ -1,0 +1,42 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FloorPlan",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/FloorPlan.App/bin/Debug/net10.0-windows/floorplan.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole"
+    },
+    {
+      "name": "FloorPlan: open folder…",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/FloorPlan.App/bin/Debug/net10.0-windows/floorplan.exe",
+      "args": ["${input:projectFolder}"],
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole"
+    },
+    {
+      "name": "FloorPlan: live front end",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build and dev server",
+      "program": "${workspaceFolder}/src/FloorPlan.App/bin/Debug/net10.0-windows/floorplan.exe",
+      "env": { "FLOORPLAN_DEV_URL": "http://localhost:5173/" },
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "projectFolder",
+      "type": "promptString",
+      "description": "Project folder to map",
+      "default": "${workspaceFolder}"
+    }
+  ]
+}

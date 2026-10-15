@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>floorplan</AssemblyName>
+    <RootNamespace>FloorPlan.App</RootNamespace>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <!-- Report single-file problems in every build; also keeps the lock file the same for builds and publishes. -->
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+  </PropertyGroup>
+
+  <!-- dotnet publish -r win-x64 produces one self-contained floorplan.exe. Only when a runtime is
+       given, so ordinary builds keep their output in bin\<Configuration>\net10.0-windows\. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <WebDir>$(MSBuildThisFileDirectory)..\..\web\</WebDir>
+    <WebDist>$(WebDir)dist\</WebDist>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FloorPlan.Core\FloorPlan.Core.csproj" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+  </ItemGroup>
+
+  <!-- The front end is built with npm and embedded, so the executable is self-contained. -->
+  <ItemGroup>
+    <WebSource Include="$(WebDir)src\**\*;$(WebDir)index.html;$(WebDir)package.json;$(WebDir)vite.config.ts;$(WebDir)tsconfig.json" />
+  </ItemGroup>
+
+  <Target Name="BuildWeb" Inputs="@(WebSource)" Outputs="$(WebDist)index.html" Condition="'$(SkipWebBuild)' != 'true'">
+    <Exec Command="npm ci" WorkingDirectory="$(WebDir)" Condition="!Exists('$(WebDir)node_modules')" />
+    <Exec Command="npm run build" WorkingDirectory="$(WebDir)" />
+  </Target>
+
+  <Target Name="EmbedWeb" BeforeTargets="BeforeBuild" DependsOnTargets="BuildWeb">
+    <Error Condition="!Exists('$(WebDist)index.html')" Text="The front end is not built. Run 'npm ci' and 'npm run build' in web/." />
+    <ItemGroup>
+      <WebFile Include="$(WebDist)**\*" />
+      <EmbeddedResource Include="@(WebFile)" LogicalName="web/%(WebFile.RecursiveDir)%(WebFile.Filename)%(WebFile.Extension)" WithCulture="false" />
+    </ItemGroup>
+  </Target>
+
+  <!-- The WebView2 package also references its WPF control, which this WinForms host never loads. -->
+  <Target Name="DropWebView2Wpf" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+
+</Project>

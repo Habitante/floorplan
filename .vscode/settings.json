@@ -1,0 +1,7 @@
+{
+  "dotnet.defaultSolution": "FloorPlan.slnx",
+  "files.exclude": {
+    "**/bin": true,
+    "**/obj": true
+  }
+}

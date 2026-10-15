@@ -1,0 +1,90 @@
+# FloorPlan
+
+A visual development board for understanding a project's code, data and current direction. Open a repository, see where its weight and activity are, and inspect the evidence behind architectural decisions.
+
+The aim is to keep the human informed enough to ask better questions and choose useful work while collaborating with coding agents.
+
+## Why
+
+From the author's original note:
+
+> Many of us were good software architects, but as we reach further and further with current AI coding agents, we are doing too much, too quick, often working on several big projects at once. And you know the toll project switching takes on humans. It's hard to keep the project as a whole in mind. So we sometimes feel relegated to being "dumb project leads", or almost "dumb clients", asking the agents basic questions about our own projects: how things work, where things are, what can be done or not. And that isn't good.
+>
+> I like the SpaceSniffer analogy because something that gave us (at least those of us who are good at visual processing and spatial reasoning) an instant snapshot of each project in development could "upload" the most essential information into our brains in an instant. Give us, viscerally, the project's map, state and vitals. So we could be a bit less "dumb clients", and more informed, expert project leads.
+
+## Documents
+
+- [DESIGN.md](DESIGN.md): the product and architecture contract, and the milestones.
+- [DISCOVERY.md](DISCOVERY.md): research, the case study and a dated log of decisions with their reasons.
+- [AGENTS.md](AGENTS.md): rules for agents working in this repository.
+- [ref/README.md](ref/README.md): reference checkouts and their provenance.
+
+## Status
+
+Milestone 1 in progress (15 October 2026). `floorplan.exe` opens a folder and draws every file as a nested treemap.
+
+Working:
+
+- **Scan:** Git-tracked files in the working tree (or every file in a plain folder), with size, physical lines, kind and up to 1,000 commits of history. Read-only: Git runs without optional locks or repository-configured helpers, and a test checks that `.git` is left untouched.
+- **Map:** canvas treemap down to individual files. Area is Lines or Bytes; fill is Activity or Kind. Zoom with double-click, the mouse wheel, the breadcrumb or Backspace. Tooltips show each item's measurements.
+- **Inspector:** measurements, composition by kind, contents (including files with no weight under the current area), and recent commits for the selection.
+- **History strip:** drag to choose the commits counted by Activity; click a commit to see the files it touched.
+- **Live refresh:** the map rescans when project files change or a commit lands, ignoring Git-ignored output and editors' index updates. Uncommitted changes are outlined in violet and collected as a pending entry at the end of the history strip. Untracked files can be included from the info panel (remembered per project).
+- **Reader:** click a file to read it with syntax colouring, in the side panel (drag its edge to resize; the map keeps its layout). Chips switch between the file, its uncommitted diff and the diffs of recent commits that touched it. Inside a selected commit, clicking a file opens that commit's diff.
+- **Remembered view:** each project reopens at its last zoom and history range; a range ending at the newest commit keeps following new commits.
+- **Executable modes:** window, `scan` (JSON on stdout) and `--smoke` (capture plus measurements).
+
+Next: step 1d (polish), then milestone 2, the shared pointer. See the [roadmap](DESIGN.md#milestones).
+
+Case-study baseline (a private Godot game: 2,855 files, 460 commits; published executable, 1600×1000 window):
+
+| Measure | Value |
+|---|---|
+| Scan | 0.36 s |
+| First map after launch | 0.89 s |
+| Memory, private | 114 MiB host, 186 MiB WebView2 (5 processes) |
+| Executable | 49.8 MB, single file |
+
+The scan's file set, byte and line totals, and per-file commit counts for the latest 40 commits matched independent Git and filesystem queries.
+
+## Build and run
+
+Requires the .NET 10 SDK, Node 24 and Git. WebView2 ships with Windows 11.
+
+```bash
+npm ci --prefix web
+dotnet build FloorPlan.slnx
+dotnet run --project src/FloorPlan.App -- path/to/a/repository
+```
+
+The build runs the front-end build and embeds it in the executable.
+
+In VS Code, press F5 with one of the launch configurations: **FloorPlan** (last project), **FloorPlan: open folder…**, or **FloorPlan: live front end**. The last one starts the Vite dev server and loads it inside the window, so front-end edits reload in place and F12 opens DevTools. Ctrl+Shift+B builds; the default test task runs both suites.
+
+Checks:
+
+```bash
+dotnet test tests/FloorPlan.Core.Tests
+npm test --prefix web
+npm run typecheck --prefix web
+```
+
+Single-file executable at `publish/floorplan.exe`:
+
+```bash
+dotnet publish src/FloorPlan.App -c Release -r win-x64 -o publish
+```
+
+Executable usage:
+
+- `floorplan [folder] [--open file[@commit|@working]]` opens the window, on the last project when no folder is given, optionally with a file (or its diff) in the reader.
+- `floorplan scan <folder> [--pretty] [--commits N]` writes the scan model as JSON to stdout.
+- `floorplan <folder> --smoke out.png [--size 1600x1000]` opens the window, then writes a capture and `out.json` with timings and memory before exiting.
+
+Front-end work in a browser: save a scan with `floorplan scan <folder> > web/.dev/scan.json`, run `npm run dev --prefix web`, and open `http://localhost:5173` (add `?theme=dark` or `?theme=light` to force a theme). To use the dev server inside the real window instead, set `FLOORPLAN_DEV_URL=http://localhost:5173/` before starting the executable.
+
+Icons: a licensed Font Awesome 6 font placed at `%LOCALAPPDATA%\FloorPlan\fonts\icons.otf` is used when present; otherwise the bundled free icons are used.
+
+`web/.npmrc` sets `legacy-peer-deps` to avoid an npm 11.5 crash while resolving Vitest's optional peer packages. Every peer the project needs is listed explicitly.
+
+FloorPlan stores settings, logs and WebView2 data in `%LOCALAPPDATA%\FloorPlan`. It writes nothing to the projects it inspects.

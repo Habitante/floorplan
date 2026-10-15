@@ -1,0 +1,39 @@
+# Dependencies and generated application output
+node_modules/
+out/
+dist/
+release/
+coverage/
+*.tsbuildinfo
+*.log
+
+# .NET build output and IDE state
+bin/
+obj/
+publish/
+.vs/
+*.user
+
+# Local settings and credentials
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+
+# Independent research clones; retain their inventory
+/ref/*
+!/ref/README.md
+
+# User-supplied local Pro font and derived subset
+/fonts/FA6-Pro-*
+/fonts/repo-icons.woff*
+
+# Discovery sketches embed a subset of the Pro font
+/sketches/
+
+# Saved scans for the browser preview (may contain project inventories)
+/web/.dev/
+
+# Raw discovery inputs (the original note, a design conversation): kept locally
+/docs/history/

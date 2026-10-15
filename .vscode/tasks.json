@@ -1,0 +1,64 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "detail": "Build the solution; the front end is rebuilt and embedded when it changed",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/FloorPlan.slnx", "-nologo", "-v", "q"],
+      "problemMatcher": "$msCompile",
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "test: core",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["test", "${workspaceFolder}/tests/FloorPlan.Core.Tests", "-nologo"],
+      "problemMatcher": "$msCompile",
+      "group": "test"
+    },
+    {
+      "label": "test: web",
+      "type": "shell",
+      "command": "npm test && npm run typecheck",
+      "options": { "cwd": "${workspaceFolder}/web" },
+      "problemMatcher": "$tsc",
+      "group": "test"
+    },
+    {
+      "label": "test",
+      "dependsOn": ["test: core", "test: web"],
+      "dependsOrder": "sequence",
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true }
+    },
+    {
+      "label": "web: dev server",
+      "detail": "Vite with hot reload on port 5173",
+      "type": "shell",
+      "command": "npm run dev -- --port 5173 --strictPort",
+      "options": { "cwd": "${workspaceFolder}/web", "env": { "NO_COLOR": "1" } },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^(?!x)x$" },
+        "background": { "activeBegin": true, "beginsPattern": "VITE v", "endsPattern": "Local:" }
+      }
+    },
+    {
+      "label": "build and dev server",
+      "dependsOn": ["build", "web: dev server"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "publish",
+      "detail": "Single self-contained publish/floorplan.exe",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["publish", "${workspaceFolder}/src/FloorPlan.App", "-c", "Release", "-r", "win-x64", "-o", "${workspaceFolder}/publish", "-nologo"],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}
