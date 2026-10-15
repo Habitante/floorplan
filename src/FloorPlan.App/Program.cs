@@ -6,6 +6,7 @@ static class Program
     static int Main(string[] args)
     {
         if (args is ["scan", ..]) return ScanCommand.Run(args[1..]);
+        if (args is ["mcp", ..]) return McpCommand.Run(args[1..]);
 
         var launch = LaunchOptions.Parse(args);
         ApplicationConfiguration.Initialize();
@@ -15,19 +16,27 @@ static class Program
     }
 }
 
-/// <summary><c>floorplan [folder] [--open file[@commit|@working]] [--smoke out.png] [--size WxH]</c></summary>
-sealed record LaunchOptions(string? Path, string? SmokeCapture, Size? Size, string? Open)
+/// <summary><c>floorplan [folder] [--open file[@commit|@working]] [--theme light|dark] [--smoke out.png] [--size WxH] [--settle seconds]</c></summary>
+sealed record LaunchOptions(string? Path, string? SmokeCapture, Size? Size, string? Open, TimeSpan Settle, string? Theme)
 {
     public static LaunchOptions Parse(string[] args)
     {
-        string? path = null, smoke = null, open = null;
+        string? path = null, smoke = null, open = null, theme = null;
         Size? size = null;
+        var settle = TimeSpan.FromSeconds(3);
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
                 case "--smoke" when i + 1 < args.Length:
                     smoke = System.IO.Path.GetFullPath(args[++i]);
+                    break;
+                case "--theme" when i + 1 < args.Length:
+                    theme = args[++i] is "light" or "dark" ? args[i] : null;
+                    break;
+                case "--settle" when i + 1 < args.Length:
+                    if (double.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture, out double seconds) && seconds is >= 0 and <= 600)
+                        settle = TimeSpan.FromSeconds(seconds);
                     break;
                 case "--open" when i + 1 < args.Length:
                     open = args[++i];
@@ -41,6 +50,6 @@ sealed record LaunchOptions(string? Path, string? SmokeCapture, Size? Size, stri
                     break;
             }
         }
-        return new LaunchOptions(path, smoke, size, open);
+        return new LaunchOptions(path, smoke, size, open, settle, theme);
     }
 }

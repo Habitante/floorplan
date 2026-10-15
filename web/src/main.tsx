@@ -1,4 +1,5 @@
 import { render } from 'preact'
+import { receivePointer, reportBoard } from './board-controller'
 import { connect, send } from './bridge'
 import { App } from './components'
 import { loadIconFonts } from './icons'
@@ -40,11 +41,15 @@ connect(message => {
       openReader(node, message.commit === 'working' ? 'working' : index >= 0 ? index : null)
       break
     }
+    case 'pointer':
+      receivePointer(message)
+      break
     case 'idle':
       status.value = { state: 'idle' }
       break
   }
 })
+reportBoard()
 
 addEventListener('keydown', e => {
   const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement

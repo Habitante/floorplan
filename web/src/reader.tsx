@@ -23,7 +23,7 @@ import { request } from './bridge'
 import * as format from './format'
 import { Icon } from './icons'
 import { displayName, type Model } from './model'
-import { activity, range, reader, type ReaderTarget } from './state'
+import { activity, range, reader, readerLines, type ReaderTarget } from './state'
 
 /** GDScript reads well as Python once its own declaration words count as keywords. */
 const GDSCRIPT_WORDS = new Set([
@@ -99,6 +99,55 @@ const base: Extension = [
   syntaxHighlighting(highlight),
 ]
 
+/** Reports the lines in view and the lines of selected text, so agents know which part is "this". */
+function trackLines(view: EditorView): () => void {
+  let frame = 0
+  const update = () => {
+    frame = 0
+    readerLines.value = { visible: visibleLines(view), selection: selectedLines(view) }
+  }
+  const schedule = () => {
+    if (!frame) frame = requestAnimationFrame(update)
+  }
+  const resize = new ResizeObserver(schedule)
+  resize.observe(view.scrollDOM)
+  view.scrollDOM.addEventListener('scroll', schedule, { passive: true })
+  document.addEventListener('selectionchange', schedule)
+  schedule()
+  return () => {
+    cancelAnimationFrame(frame)
+    resize.disconnect()
+    view.scrollDOM.removeEventListener('scroll', schedule)
+    document.removeEventListener('selectionchange', schedule)
+    readerLines.value = { visible: null, selection: null }
+  }
+}
+
+function visibleLines(view: EditorView): [number, number] | null {
+  const box = view.scrollDOM.getBoundingClientRect()
+  if (box.height <= 0) return null
+  const doc = view.state.doc
+  const first = view.lineBlockAtHeight(box.top - view.documentTop)
+  const last = view.lineBlockAtHeight(box.bottom - 1 - view.documentTop)
+  return [doc.lineAt(first.from).number, doc.lineAt(last.to).number]
+}
+
+/** The editor is read-only, so text selection lives in the page, not in the editor state. */
+function selectedLines(view: EditorView): [number, number] | null {
+  const selection = document.getSelection()
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null
+  const span = selection.getRangeAt(0)
+  if (!view.contentDOM.contains(span.startContainer) || !view.contentDOM.contains(span.endContainer)) return null
+  try {
+    const from = view.posAtDOM(span.startContainer, span.startOffset)
+    const to = view.posAtDOM(span.endContainer, span.endOffset)
+    const doc = view.state.doc
+    return [doc.lineAt(Math.min(from, to)).number, doc.lineAt(Math.max(from, to)).number]
+  } catch {
+    return null
+  }
+}
+
 type Content =
   | { state: 'loading' }
   | { state: 'error'; message: string }
@@ -151,7 +200,11 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
       parent: host.current,
       state: EditorState.create({ doc: content.state === 'diff' ? content.after : content.text, extensions }),
     })
-    return () => view.destroy()
+    const stop = trackLines(view)
+    return () => {
+      stop()
+      view.destroy()
+    }
   }, [content])
 
   // Recent commits in the selected range that touched this file, newest first.

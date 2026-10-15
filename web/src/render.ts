@@ -27,6 +27,10 @@ export interface Scene {
   hover: Node | null
   selected: Node | null
   touched: Uint8Array | null
+  /** Files and folders agents are pointing at. */
+  pointed: readonly Node[]
+  /** Extra emphasis for a pointer that just arrived, 0 to 1. */
+  pulse: number
   /** Labels are skipped while animating. */
   labels: boolean
 }
@@ -172,14 +176,19 @@ function drawOverlays(ctx: CanvasRenderingContext2D, scene: Scene, view: View) {
     for (let n: Node | null = node; n && !item; n = n.parent) item = scene.itemByNode.get(n)
     return item && item.depth > 0 ? item : undefined
   }
-  const outline = (item: Item | undefined, width: number, color: string) => {
+  /** A stroke of `width` screen pixels, `inset` pixels inside the item's edge. */
+  const ring = (item: Item | undefined, inset: number, width: number, color: string) => {
     if (!item) return
+    const ix = inset / view.sx
+    const iy = inset / view.sy
     const wx = width / view.sx
     const wy = width / view.sy
+    if (inset > 0 && (item.w <= 2 * ix + wx || item.h <= 2 * iy + wy)) return
     ctx.lineWidth = Math.min(wx, wy)
     ctx.strokeStyle = color
-    ctx.strokeRect(item.x + wx / 2, item.y + wy / 2, item.w - wx, item.h - wy)
+    ctx.strokeRect(item.x + ix + wx / 2, item.y + iy + wy / 2, item.w - 2 * ix - wx, item.h - 2 * iy - wy)
   }
+  const outline = (item: Item | undefined, width: number, color: string) => ring(item, 0, width, color)
 
   if (scene.touched) {
     for (const it of scene.items) {
@@ -193,6 +202,17 @@ function drawOverlays(ctx: CanvasRenderingContext2D, scene: Scene, view: View) {
     if (item && !marked.has(item)) {
       marked.add(item)
       outline(item, 2, scene.palette.change)
+    }
+  }
+  // Agents' pointers, likewise. A surface hairline inside keeps the outline legible on any fill.
+  const pointed = new Set<Item>()
+  const width = 3 + 3 * scene.pulse
+  for (const node of scene.pointed) {
+    const item = drawn(node)
+    if (item && !pointed.has(item)) {
+      pointed.add(item)
+      outline(item, width, scene.palette.pointer)
+      ring(item, width, 1, scene.palette.surface)
     }
   }
   outline(drawn(scene.hover), 1, scene.palette.ink)

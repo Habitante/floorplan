@@ -1,4 +1,5 @@
 import { effect } from '@preact/signals'
+import { pointedNodes, pulse } from './board'
 import { send } from './bridge'
 import * as format from './format'
 import { GLYPHS, iconFontsLoaded, type IconName } from './glyphs'
@@ -7,7 +8,9 @@ import { contains, displayName, weightOf, type Footprint, type Model, type Node 
 import { readPalette, type Palette } from './palette'
 import { drawScene, IDENTITY, type View } from './render'
 import type { Rect } from './squarify'
-import { activity, focus, footprint, hovered, lens, model, openReader, reader, selected, selectedCommit, touched, zoomTo } from './state'
+import {
+  activity, focus, footprint, hovered, lens, model, openReader, pointers, reader, selected, selectedCommit, touched, zoomTo,
+} from './state'
 
 const ANIMATION_MS = 260
 
@@ -57,7 +60,7 @@ export class MapController {
 
     this.cleanup.push(effect(() => this.relayout(model.value, focus.value, footprint.value)))
     this.cleanup.push(effect(() => {
-      void lens.value, activity.value, hovered.value, selected.value, touched.value, iconFontsLoaded.value
+      void lens.value, activity.value, hovered.value, selected.value, touched.value, pointers.value, iconFontsLoaded.value
       this.request()
     }))
 
@@ -154,6 +157,8 @@ export class MapController {
       if (t >= 1) this.animation = null
     }
 
+    const pointing = pointers.peek()
+    const emphasis = this.reducedMotion.matches ? 0 : pulse(pointing, performance.now())
     drawScene(this.ctx, {
       model: m,
       items: this.items,
@@ -165,10 +170,12 @@ export class MapController {
       hover: hovered.peek(),
       selected: selected.peek(),
       touched: touched.peek(),
+      pointed: pointedNodes(m, pointing),
+      pulse: emphasis,
       labels: this.animation === null,
     }, this.width, this.height, this.dpr, view)
 
-    if (this.animation) this.request()
+    if (this.animation || emphasis > 0) this.request()
     if (this.reportedModel !== m) {
       this.reportedModel = m
       send({ type: 'rendered', files: m.root.files, items: this.items.length, ms: Math.round(performance.now()) })

@@ -63,3 +63,25 @@ export interface Scan {
   commits: Commit[]
   issues: { path?: string; message: string }[]
 }
+
+/** What the window shows, reported to the host so agents can resolve "this" (FloorPlan.Core's BoardView). */
+export interface BoardView {
+  /** The folder the map is zoomed into; '' for the whole project. */
+  focus: string
+  selected: string | null
+  /** The commit selected on the history strip, 'working' for the uncommitted changes. */
+  commit: string | null
+  /** Oldest and newest commits counted by the activity lens. */
+  range: { from: string | null; to: string | null; count: number; latest: boolean } | null
+  reader: {
+    path: string
+    /** A SHA when the reader shows that commit's diff, 'working' for the uncommitted diff. */
+    commit: string | null
+    /** First and last line in view. */
+    visible: [number, number] | null
+    /** First and last line of the selected text. */
+    selection: [number, number] | null
+  } | null
+  area: 'lines' | 'bytes'
+  fill: 'activity' | 'kind'
+}

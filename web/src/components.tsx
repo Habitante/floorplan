@@ -1,15 +1,17 @@
 import { useSignal } from '@preact/signals'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ACTIVITY_STEP_LABELS } from './activity'
+import { pointedNodes } from './board'
+import { dismissPointer, goTo } from './board-controller'
 import { send } from './bridge'
 import * as format from './format'
 import { HistoryController } from './history-controller'
 import { Icon } from './icons'
 import { MapController } from './map-controller'
-import { ancestry, displayName, KINDS, weightOf, type Model, type Node } from './model'
+import { ancestry, contains, displayName, KINDS, weightOf, type Model, type Node } from './model'
 import { price, type PriceTag } from './render'
 import {
-  activity, focus, footprint, lens, model, openReader, range, reader, reveal, selected, selectedCommit, status, zoomTo,
+  activity, focus, footprint, lens, model, openReader, pointers, range, reader, reveal, selected, selectedCommit, status, zoomTo,
 } from './state'
 import type { FileKind, WorkingChange } from './types'
 
@@ -261,6 +263,45 @@ function MapView() {
   )
 }
 
+/**
+ * Agents' pointers: who points and why, beside the map rather than over it, so no fill is
+ * hidden. The outlined paths and their count are in the tooltip.
+ */
+function PointerChips({ model: m }: { model: Model }) {
+  const list = pointers.value
+  const f = focus.value
+  if (list.length === 0) return null
+  return (
+    <ul class="pointers" aria-label="Agents pointing at the map">
+      {list.map(p => {
+        const nodes = pointedNodes(m, [p])
+        const outside = f ? nodes.filter(n => !contains(f, n)).length : 0
+        const detail = [
+          `${p.agent} · ${format.dateLong(new Date(p.at))}`,
+          ...nodes.slice(0, 12).map(n => n.path || displayName(m, n)),
+          nodes.length > 12 ? `+${format.int(nodes.length - 12)} more` : '',
+          outside > 0 ? `${format.int(outside)} outside this view` : '',
+        ].filter(Boolean).join('\n')
+        return (
+          <li class="pointer-chip" key={p.agent}>
+            <button class="pointer-main" title={detail} onClick={() => goTo(p)}>
+              <Icon name="pointer" />
+              <span class="pointer-agent">{p.agent}</span>
+              {p.caption && <span class="pointer-caption">{p.caption}</span>}
+            </button>
+            <button class="icon-button" aria-label={`Show what ${p.agent} points at`} title="Show on the map" onClick={() => goTo(p)}>
+              <Icon name="locate" />
+            </button>
+            <button class="icon-button" aria-label={`Dismiss ${p.agent}'s pointer`} title="Dismiss" onClick={() => dismissPointer(p.agent)}>
+              <Icon name="close" />
+            </button>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 function History() {
   const m = model.value
   const host = useRef<HTMLDivElement>(null)
@@ -271,7 +312,8 @@ function History() {
     const controller = new HistoryController(host.current, canvas.current!, tip.current!)
     return () => controller.dispose()
   }, [m !== null && m.commits.length > 0])
-  if (!m || m.commits.length === 0) return null
+  const history = m !== null && m.commits.length > 0
+  if (!m || (!history && pointers.value.length === 0)) return null
 
   const [from, to] = range.value
   const first = m.commits[from]
@@ -279,8 +321,8 @@ function History() {
   return (
     <section class="history" aria-label="History">
       <div class="history-head num">
-        <span><Icon name="commit" />{format.int(to - from)} / {format.int(m.commits.length)}</span>
-        {m.changed.length > 0 && (
+        {history && <span><Icon name="commit" />{format.int(to - from)} / {format.int(m.commits.length)}</span>}
+        {history && m.changed.length > 0 && (
           <button
             class="pending num"
             title="Uncommitted changes"
@@ -291,11 +333,14 @@ function History() {
           </button>
         )}
         {first && last && <span>{format.dateShort(format.fromUnix(first.time))} – {format.dateShort(format.fromUnix(last.time))}</span>}
+        <PointerChips model={m} />
       </div>
-      <div class="history-strip" ref={host}>
-        <canvas ref={canvas} aria-label="Commit timeline: drag to choose the commits counted by Activity" />
-        <div class="tip" ref={tip} hidden />
-      </div>
+      {history && (
+        <div class="history-strip" ref={host}>
+          <canvas ref={canvas} aria-label="Commit timeline: drag to choose the commits counted by Activity" />
+          <div class="tip" ref={tip} hidden />
+        </div>
+      )}
     </section>
   )
 }

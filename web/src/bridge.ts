@@ -1,4 +1,4 @@
-import type { Scan } from './types'
+import type { BoardView, Scan } from './types'
 
 export type HostMessage =
   | { type: 'scanning'; path: string }
@@ -10,6 +10,8 @@ export type HostMessage =
   | { type: 'idle' }
   | { type: 'file' | 'diff'; request: number }
   | { type: 'openReader'; path: string; commit: string | null }
+  /** An agent points at paths (validated against the scan by the host); no paths clears its pointer. */
+  | { type: 'pointer'; agent: string; caption: string; paths: string[]; at: number }
 
 export type AppMessage =
   | { type: 'ready' }
@@ -19,6 +21,7 @@ export type AppMessage =
   | { type: 'rendered'; files: number; items: number; ms: number }
   | { type: 'readFile'; path: string }
   | { type: 'readDiff'; path: string; commit: string }
+  | { type: 'board'; view: BoardView }
 
 interface WebView {
   postMessage(message: unknown): void

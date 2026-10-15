@@ -22,6 +22,7 @@
   --kind-other: #d8d7d0;
   --accent: #2a78d6;
   --change: #4a3aa7;
+  --pointer: #c2257a;
   --syn-keyword: #7a3e9d;
   --syn-string: #2b7a3d;
   --syn-comment: #8a8780;
@@ -60,6 +61,7 @@
     --kind-other: #4a4a46;
     --accent: #3987e5;
     --change: #9085e9;
+    --pointer: #f566ab;
     --syn-keyword: #c792ea;
     --syn-string: #9ed39b;
     --syn-comment: #85837c;
@@ -99,6 +101,7 @@
   --kind-other: #4a4a46;
   --accent: #3987e5;
   --change: #9085e9;
+  --pointer: #f566ab;
   --syn-keyword: #c792ea;
   --syn-string: #9ed39b;
   --syn-comment: #85837c;
@@ -332,6 +335,7 @@ button:focus-visible, canvas:focus-visible, [tabindex]:focus-visible {
 .tip .tip-price { color: var(--ink-2); margin-top: 2px; }
 .tip .tip-note { color: var(--ink-3); margin-top: 2px; }
 
+
 /* Empty, scanning and error states */
 
 .welcome {
@@ -380,7 +384,45 @@ button:focus-visible, canvas:focus-visible, [tabindex]:focus-visible {
   font-size: 12px;
   color: var(--ink-2);
   margin-bottom: 4px;
+  min-width: 0;
 }
+
+/* Agents' pointers, beside the map rather than over it */
+
+.pointers {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  margin: -3px 0 -3px auto;
+  padding: 0;
+  list-style: none;
+  align-self: center;
+}
+
+.pointer-chip {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 520px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--pointer);
+  border-radius: 6px;
+}
+
+.pointer-main {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 4px 2px 7px;
+  border-radius: 4px;
+}
+
+.pointer-main:hover { background: var(--hover); }
+.pointer-main .icon { color: var(--pointer); align-self: center; }
+.pointer-agent { color: var(--ink-3); white-space: nowrap; }
+.pointer-caption { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pointer-chip .icon-button { width: 22px; height: 22px; font-size: 12px; flex: none; }
 
 .history-strip { position: relative; height: 40px; }
 .history-strip canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }

@@ -9,6 +9,8 @@ static class AppData
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FloorPlan");
 
     public static string WebView => Path.Combine(Folder, "WebView2");
+    /// <summary>Smoke runs keep their own browser data, apart from any open window.</summary>
+    public static string SmokeWebView => Path.Combine(Folder, "WebView2-smoke");
     public static string LogFile => Path.Combine(Folder, "floorplan.log");
     static string SettingsFile => Path.Combine(Folder, "settings.json");
 

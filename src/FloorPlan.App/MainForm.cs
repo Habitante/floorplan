@@ -9,8 +9,9 @@ namespace FloorPlan.App;
 /// <summary>
 /// The window: hosts the front end in WebView2, serves it from embedded resources and
 /// answers a small set of messages (open, rescan). The front end has no filesystem access.
+/// It also serves the shared board to agents through <c>floorplan mcp</c>.
 /// </summary>
-sealed class MainForm : Form
+sealed class MainForm : Form, IBoardSurface
 {
     const string Origin = "https://floorplan.invalid/";
     static readonly string? DevUrl = Environment.GetEnvironmentVariable("FLOORPLAN_DEV_URL");
@@ -28,8 +29,10 @@ sealed class MainForm : Form
     bool rescanPending;
     ProjectWatcher? watcher;
     string? watchedRoot;
-    IReadOnlySet<string> knownPaths = new HashSet<string>();
-    IReadOnlySet<string> knownFiles = new HashSet<string>();
+    ProjectIndex? index;
+    readonly BoardState board = new();
+    BoardServer? boardServer;
+    string? boardRoot;
     const int ReadLimit = 1024 * 1024;
     bool smokeDone;
     bool firstMapLogged;
@@ -42,8 +45,7 @@ sealed class MainForm : Form
         scanner = new ProjectScanner(git);
         projectPath = launch.Path is { } p ? Path.GetFullPath(p) : settings.LastProject;
         Text = "FloorPlan";
-        bool dark = NativeMethods.AppsUseDarkTheme();
-        BackColor = dark ? Color.FromArgb(0x0d, 0x0d, 0x0d) : Color.FromArgb(0xf9, 0xf9, 0xf7);
+        BackColor = Dark ? Color.FromArgb(0x0d, 0x0d, 0x0d) : Color.FromArgb(0xf9, 0xf9, 0xf7);
         StartPosition = FormStartPosition.CenterScreen;
         var area = Screen.FromPoint(Cursor.Position).WorkingArea;
         ClientSize = launch.Size ?? new Size((int)(area.Width * 0.8), (int)(area.Height * 0.85));
@@ -52,10 +54,13 @@ sealed class MainForm : Form
         Controls.Add(web);
     }
 
+    /// <summary>The theme given at launch, otherwise the system's.</summary>
+    bool Dark => launch.Theme is { } theme ? theme == "dark" : NativeMethods.AppsUseDarkTheme();
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        NativeMethods.UseDarkTitleBar(Handle, NativeMethods.AppsUseDarkTheme());
+        NativeMethods.UseDarkTitleBar(Handle, Dark);
     }
 
     protected override async void OnLoad(EventArgs e)
@@ -74,7 +79,7 @@ sealed class MainForm : Form
         }
         if (launch.SmokeCapture is not null)
         {
-            _ = Task.Delay(TimeSpan.FromSeconds(90)).ContinueWith(_ => BeginInvoke(() =>
+            _ = Task.Delay(TimeSpan.FromSeconds(90) + launch.Settle).ContinueWith(_ => BeginInvoke(() =>
             {
                 if (smokeDone) return;
                 AppData.Log("smoke: timed out waiting for the first map");
@@ -88,12 +93,15 @@ sealed class MainForm : Form
     {
         scanCancellation?.Cancel();
         watcher?.Dispose();
+        _ = boardServer?.DisposeAsync();
         base.OnFormClosed(e);
     }
 
     async Task InitializeWebViewAsync()
     {
-        var environment = await CoreWebView2Environment.CreateAsync(null, AppData.WebView);
+        // Windows sharing a WebView2 data folder share its browser and GPU processes, so a smoke
+        // run uses its own: its measurements and captures stay independent of an open window.
+        var environment = await CoreWebView2Environment.CreateAsync(null, launch.SmokeCapture is null ? AppData.WebView : AppData.SmokeWebView);
         await web.EnsureCoreWebView2Async(environment);
         var core = web.CoreWebView2;
         bool dev = DevUrl is not null || Debugger.IsAttached;
@@ -110,7 +118,7 @@ sealed class MainForm : Form
         core.WebMessageReceived += OnWebMessage;
         core.AddWebResourceRequestedFilter(Origin + "*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnWebResourceRequested;
-        core.Navigate(DevUrl ?? Origin + "index.html");
+        core.Navigate((DevUrl ?? Origin + "index.html") + (launch.Theme is { } theme ? $"?theme={theme}" : ""));
     }
 
     static bool IsOwnUrl(string uri) =>
@@ -176,6 +184,17 @@ sealed class MainForm : Form
             case "rendered":
                 OnRendered(message.RootElement);
                 break;
+            case "board":
+                try
+                {
+                    if (message.RootElement.TryGetProperty("view", out var view) && view.Deserialize<BoardView>(ScanJson.Options) is { } boardView)
+                        board.Update(boardView, lastScan?.Project.Head, DateTimeOffset.Now);
+                }
+                catch (JsonException error)
+                {
+                    AppData.Log($"board: unreadable view: {error.Message}");
+                }
+                break;
             case "readFile" or "readDiff":
             {
                 // Copy what the reply needs: the message is disposed when this handler returns.
@@ -238,10 +257,15 @@ sealed class MainForm : Form
             var scan = await Task.Run(() => scanner.ScanAsync(path, options, progress, cancellation.Token), cancellation.Token);
             if (cancellation.IsCancellationRequested) return;
             lastScan = scan;
+            index = new ProjectIndex(scan);
             projectPath = scan.Project.Root;
-            settings.LastProject = scan.Project.Root;
-            AppData.Save(settings);
+            if (launch.SmokeCapture is null)
+            {
+                settings.LastProject = scan.Project.Root;
+                AppData.Save(settings);
+            }
             Text = $"{scan.Project.Name} — FloorPlan";
+            ServeBoard(scan.Project.Root);
             Post(new { type = "scan", scan });
             Watch(scan);
             if (quiet) AppData.Log($"refresh {scan.Project.DurationMs} ms · {scan.Tree.Files} files · {scan.Commits.Count} commits · {scan.Project.Changes} changes");
@@ -274,13 +298,10 @@ sealed class MainForm : Form
     sealed record FileText(string? Value, bool Binary, bool Truncated);
 
     /// <summary>Resolves a path from the front end; only files in the last scan are readable.</summary>
-    bool TryResolve(string? path, out string full)
+    bool TryResolve(string? path, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? full)
     {
-        full = "";
-        if (lastScan is null || path is null || !knownFiles.Contains(path)) return false;
-        var root = lastScan.Project.Root;
-        full = Path.GetFullPath(Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)));
-        return full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        full = null;
+        return index is not null && index.TryGetFile(path, out full);
     }
 
     static FileText Decode(byte[] bytes)
@@ -357,23 +378,6 @@ sealed class MainForm : Form
     /// <summary>Watches the scanned project and refreshes it when something on the map changes.</summary>
     void Watch(ProjectScan scan)
     {
-        var known = new HashSet<string>(StringComparer.Ordinal);
-        void Collect(FloorPlan.Core.TreeNode node)
-        {
-            if (node.Path.Length > 0) known.Add(node.Path);
-            foreach (var child in node.Children ?? []) Collect(child);
-        }
-        Collect(scan.Tree);
-        knownPaths = known;
-        var files = new HashSet<string>(StringComparer.Ordinal);
-        void CollectFiles(FloorPlan.Core.TreeNode node)
-        {
-            if (node.IsFile) files.Add(node.Path);
-            foreach (var child in node.Children ?? []) CollectFiles(child);
-        }
-        CollectFiles(scan.Tree);
-        knownFiles = files;
-
         var root = scan.Project.Root;
         if (watcher is not null && watchedRoot == root) return;
         watcher?.Dispose();
@@ -388,7 +392,8 @@ sealed class MainForm : Form
                 bool relevant;
                 try
                 {
-                    relevant = lost || await ChangeRelevance.AnyRelevantAsync(git, root, isGit, paths, knownPaths, exclusions, CancellationToken.None);
+                    var known = index?.Paths ?? new HashSet<string>();
+                    relevant = lost || await ChangeRelevance.AnyRelevantAsync(git, root, isGit, paths, known, exclusions, CancellationToken.None);
                 }
                 catch (Exception e) when (e is GitException or GitUnavailableException or IOException)
                 {
@@ -408,6 +413,48 @@ sealed class MainForm : Form
     {
         if (web.CoreWebView2 is null || IsDisposed) return;
         web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message, ScanJson.Options));
+    }
+
+    /// <summary>Serves the board for the project on screen; a different project starts a fresh board.</summary>
+    void ServeBoard(string root)
+    {
+        if (boardServer is not null && boardRoot == root) return;
+        _ = boardServer?.DisposeAsync();
+        board.Reset();
+        boardRoot = root;
+        boardServer = new BoardServer(root, request => OnUiThread(() => BoardService.Handle(this, request, DateTimeOffset.Now)), AppData.Log);
+    }
+
+    ProjectIndex? IBoardSurface.Index => index;
+    BoardState IBoardSurface.State => board;
+
+    void IBoardSurface.Point(Pointer pointer) =>
+        Post(new { type = "pointer", agent = pointer.Agent, caption = pointer.Caption, paths = pointer.Paths, at = pointer.At.ToUnixTimeMilliseconds() });
+
+    /// <summary>Runs work on the UI thread, which owns the scan, the board and the front end.</summary>
+    Task<T> OnUiThread<T>(Func<T> work)
+    {
+        var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            BeginInvoke(() =>
+            {
+                try
+                {
+                    done.SetResult(work());
+                }
+                catch (Exception e)
+                {
+                    // Forwarded to the board server, which replies with the error.
+                    done.SetException(e);
+                }
+            });
+        }
+        catch (InvalidOperationException)
+        {
+            done.SetException(new IOException("The FloorPlan window is closing"));
+        }
+        return done.Task;
     }
 
     void OnRendered(JsonElement message)
@@ -432,7 +479,7 @@ sealed class MainForm : Form
     {
         if (smokeDone) return;
         smokeDone = true;
-        await Task.Delay(TimeSpan.FromSeconds(3));
+        await Task.Delay(launch.Settle);
 
         long hostPrivate = Process.GetCurrentProcess().PrivateMemorySize64;
         long webPrivate = 0;

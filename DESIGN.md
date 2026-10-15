@@ -42,7 +42,7 @@ First case study: a private Godot game. Its retained legacy code and the convent
 
 **Lean daily interface:** project and location, active view and metric, the map, a contextual inspector and the history strip. Glyphs replace repeated unit words, with full accessible names. Colour scales, definitions and caveats live behind an info control or tooltip. No persistent instructions, disclaimers or overall health scores.
 
-**Overlays never erase measurements.** Selection, agent pointers and proposals use outlines and overlays so the fill underneath stays readable. A proposal is always distinguishable from existing code.
+**Overlays never erase measurements.** Selection, agent pointers and proposals use outlines and overlays so the fill underneath stays readable; agents' captions sit beside the map, not over it. A proposal is always distinguishable from existing code.
 
 ## Stack
 
@@ -54,7 +54,7 @@ First case study: a private Godot game. Its retained legacy code and the convent
 | Front end | TypeScript. The map is drawn on Canvas 2D with our own squarified layout. Panels use Preact, with signals for shared state such as selection. |
 | Text views | CodeMirror 6 for files and diffs, markdown-it for documents. ELK.js for system and flow layout when those views arrive. |
 | Bridge | WebView2 JSON messages between front end and core. No HTTP server, no listening port. |
-| Agent access | MCP through the official C# SDK, stdio transport. |
+| Agent access | MCP through the official C# SDK (`ModelContextProtocol.Core`), stdio transport. |
 | Git | The installed `git` executable. |
 | Persistence | Versioned JSON under `%LOCALAPPDATA%\FloorPlan`, which also holds WebView2's user data. No database. |
 | Build | `dotnet` for the core and executable; npm and Vite for the front end at build time only. |
@@ -76,8 +76,8 @@ Use the reference projects under `ref/` for ideas or small algorithms, keeping l
       +----------------------+-----------------------+
       |                      |                       |
    floorplan.exe        floorplan.exe scan      floorplan.exe mcp  <--- coding agent
-   window mode          JSON to stdout          (planned) stdio         (Claude Code, Codex)
-   WebView2 host +      (tests, agents)          MCP server
+   window mode          JSON to stdout          stdio MCP server        (Claude Code, Codex)
+   WebView2 host +      (tests, agents)               |
    TypeScript UI                                      |
       ^                                               |
       +---------------- named pipe -------------------+
@@ -86,7 +86,7 @@ Use the reference projects under `ref/` for ideas or small algorithms, keeping l
 
 - `FloorPlan.Core` references no UI, WebView2 or MCP packages, so the window, headless scans, tests and the MCP server share it unchanged.
 - The front end is embedded in the executable and served to WebView2 from `https://floorplan.invalid/` with a restrictive content security policy. Navigation elsewhere and new windows are refused.
-- The front end has no filesystem or process access. The bridge exposes a small set of validated operations (open project, rescan; later read file and read diff); every repository path is validated against the project root.
+- The front end has no filesystem or process access. The bridge exposes a small set of validated operations (open project, rescan, read file, read diff, report the view). Every repository path, from the front end or from an agent, must name an entry of the last scan inside the project root.
 - Scans and Git queries run off the UI thread with bounded concurrency, report progress and can be cancelled.
 - Layout calculation is separate from drawing and interaction.
 
@@ -132,11 +132,15 @@ Documentation signals:
 
 ### The shared board
 
-`floorplan.exe mcp` is a stdio MCP server that the agent launches. It relays to the open window over a named pipe and reads the core model directly when no window is open. Initial tools, names provisional:
+`floorplan.exe mcp [folder]` is a stdio MCP server that the agent launches for its working folder. It reaches the window showing that folder's project, or a folder above it, over a named pipe named after the project root: one JSON line each way per call, current user only, served by the first window open on the project. With no window it says so, and summaries read the project directly. Tools:
 
-- `get_selection()`: what the human is looking at, so "this" has a referent.
-- `show(ids, caption)`: highlight files, regions or entities with a short caption instead of paragraphs of prose.
-- `summary(scope)`: footprint and activity for a region, from the same model the human sees.
+- `get_selection()`: what the human is looking at, so "this" has a referent. The selected file or folder with its measurements, when it was selected and, if HEAD has moved since, the HEAD at that time; the file in the reader with the lines in view and any lines selected; the zoomed folder, the selected commit and the history range; and the last five selections. The human selects, then types, and by the time the agent asks the selection may have moved.
+- `show(paths, caption, agent?)`: outlines files and folders on the map with a short caption instead of paragraphs of prose. One pointer per agent, named by the agent or after its MCP client, stays until the agent points again or the human dismisses it. Paths resolve against the scan (absolute, or relative to the root or the agent's folder); unknown ones are reported back. Without a window, `show` reports that nobody is looking, so the agent falls back to prose. At the end of a task, pointing at the files it changed is the agent's visual handoff.
+- `summary(path?)`: footprint, composition and activity of a folder or file from the model the human sees, counted over the human's history range; without a window, from a fresh read-only scan over the latest 40 commits.
+
+Pointers are raspberry outlines with a hairline of the surface colour inside, validated in both themes against the activity ramp, the kind hues and the uncommitted violet. Captions sit in the row under the map. Per-agent colours wait until two agents point at once in practice; a history of pointers waits for a need.
+
+The agent registers the server from the project folder, for example `claude mcp add floorplan -- <path>\floorplan.exe mcp <project>`. Claude Code's default local scope keeps the entry in the user's own configuration; project scope would write `.mcp.json` into the inspected repository.
 
 Later, `propose(overlay)` adds a proposed change as outlined regions and edges, distinct from current code. After implementation the resulting diff lands in the same place.
 

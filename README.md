@@ -21,7 +21,7 @@ From the author's original note:
 
 ## Status
 
-Milestone 1 in progress (15 October 2026). `floorplan.exe` opens a folder and draws every file as a nested treemap.
+Milestone 2 built, awaiting its acceptance test (15 October 2026). `floorplan.exe` opens a folder and draws every file as a nested treemap, and coding agents can ask what the human has selected and point at files on it.
 
 Working:
 
@@ -32,20 +32,23 @@ Working:
 - **Live refresh:** the map rescans when project files change or a commit lands, ignoring Git-ignored output and editors' index updates. Uncommitted changes are outlined in violet and collected as a pending entry at the end of the history strip. Untracked files can be included from the info panel (remembered per project).
 - **Reader:** click a file to read it with syntax colouring, in the side panel (drag its edge to resize; the map keeps its layout). Chips switch between the file, its uncommitted diff and the diffs of recent commits that touched it. Inside a selected commit, clicking a file opens that commit's diff.
 - **Remembered view:** each project reopens at its last zoom and history range; a range ending at the newest commit keeps following new commits.
-- **Executable modes:** window, `scan` (JSON on stdout) and `--smoke` (capture plus measurements).
+- **Shared board:** `floorplan mcp` gives a coding agent three tools. `get_selection` returns the selected file or folder with when it was chosen and at which HEAD, the reader's file with the lines in view and selected, the zoom, the history range and recent selections. `show` outlines files and folders with a caption (one pointer per agent, listed under the map). `summary` reports footprint and activity from the model on screen. Without a window, the first two say nobody is looking and `summary` scans the project.
+- **Executable modes:** window, `scan` (JSON on stdout), `mcp` (MCP server on stdio) and `--smoke` (capture plus measurements).
 
-Next: step 1d (polish), then milestone 2, the shared pointer. See the [roadmap](DESIGN.md#milestones).
+Next: the step 2 acceptance test in a Claude Code session on the case study, then a path-only description of the case study to decide whether milestone 4 comes before 3. Visual tweaks (step 1d) arrive as the owner collects them. See the [roadmap](DESIGN.md#milestones).
 
-Case-study baseline (a private Godot game: 2,855 files, 460 commits; published executable, 1600×1000 window):
+Case-study baseline (a private Godot game: 2,862 files, 467 commits; published executable, 1600×1000 window):
 
 | Measure | Value |
 |---|---|
-| Scan | 0.36 s |
-| First map after launch | 0.89 s |
-| Memory, private | 114 MiB host, 186 MiB WebView2 (5 processes) |
-| Executable | 49.8 MB, single file |
+| Scan | 0.34 s |
+| First map after launch | 0.87 s |
+| Memory, private | 118 MiB host, 181 MiB WebView2 (5 processes); 245 MiB WebView2 with the reader open |
+| Board call with a window open | 2–14 ms |
+| `floorplan mcp` start | 0.22 s |
+| Executable | 53.1 MB, single file |
 
-The scan's file set, byte and line totals, and per-file commit counts for the latest 40 commits matched independent Git and filesystem queries.
+The scan's file set, byte and line totals, and per-file commit counts for the latest 40 commits matched independent Git and filesystem queries. Smoke runs keep their own WebView2 data folder, so an open window does not share their browser processes or skew these figures.
 
 ## Build and run
 
@@ -77,9 +80,18 @@ dotnet publish src/FloorPlan.App -c Release -r win-x64 -o publish
 
 Executable usage:
 
-- `floorplan [folder] [--open file[@commit|@working]]` opens the window, on the last project when no folder is given, optionally with a file (or its diff) in the reader.
+- `floorplan [folder] [--open file[@commit|@working]] [--theme light|dark]` opens the window, on the last project when no folder is given, optionally with a file (or its diff) in the reader and a theme other than the system's.
 - `floorplan scan <folder> [--pretty] [--commits N]` writes the scan model as JSON to stdout.
-- `floorplan <folder> --smoke out.png [--size 1600x1000]` opens the window, then writes a capture and `out.json` with timings and memory before exiting.
+- `floorplan mcp [folder]` serves the shared board to a coding agent working in the folder (the current one by default).
+- `floorplan <folder> --smoke out.png [--size 1600x1000] [--settle 3]` opens the window, waits the given seconds after the first map, then writes a capture and `out.json` with timings and memory before exiting.
+
+Register the board with Claude Code from the project folder:
+
+```bash
+claude mcp add floorplan -- "C:\path\to\floorplan.exe" mcp "C:\path\to\project"
+```
+
+The default local scope keeps the entry in your own Claude configuration; `--scope project` would write `.mcp.json` into the repository. A running window or MCP server locks its executable, so publish elsewhere while either is in use.
 
 Front-end work in a browser: save a scan with `floorplan scan <folder> > web/.dev/scan.json`, run `npm run dev --prefix web`, and open `http://localhost:5173` (add `?theme=dark` or `?theme=light` to force a theme). To use the dev server inside the real window instead, set `FLOORPLAN_DEV_URL=http://localhost:5173/` before starting the executable.
 

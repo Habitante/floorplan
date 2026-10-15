@@ -33,6 +33,26 @@ export interface ReaderTarget {
 }
 export const reader = signal<ReaderTarget | null>(null)
 
+/** Lines of the reader in view and selected, as the reader reports them. */
+export interface ReaderLines {
+  visible: [number, number] | null
+  selection: [number, number] | null
+}
+export const readerLines = signal<ReaderLines>({ visible: null, selection: null })
+
+/** An agent's pointer: paths outlined on the map with a caption, until replaced or dismissed. */
+export interface Pointer {
+  agent: string
+  caption: string
+  paths: string[]
+  /** When the agent pointed, Unix milliseconds. */
+  at: number
+  /** When it arrived, on the performance clock, for the arrival pulse. */
+  arrived: number
+}
+/** Oldest first, at most one per agent. */
+export const pointers = signal<Pointer[]>([])
+
 /** Commits counted by the activity lens: [from, to) into model.commits. */
 export const range = signal<[number, number]>([0, 0])
 export const footprint = signal<Footprint>(stored('footprint', ['lines', 'bytes'], 'lines'))
@@ -143,6 +163,7 @@ export function applyScan(scan: Scan) {
       ? next.commits.findIndex(c => c.sha === previous?.commits[open.commit as number]?.sha)
       : open?.commit ?? null
     reader.value = openNode && openCommit !== -1 ? { node: openNode, commit: openCommit } : null
+    if (!same) pointers.value = []
     status.value = { state: 'ready', path: scan.project.root }
   })
 }

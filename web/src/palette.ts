@@ -12,6 +12,8 @@ export interface Palette {
   kind: Record<FileKind, string>
   /** Outline for uncommitted changes. */
   change: string
+  /** Outline for agents' pointers. */
+  pointer: string
   unsampled: CanvasPattern | string
 }
 
@@ -30,6 +32,7 @@ export function readPalette(ctx: CanvasRenderingContext2D): Palette {
     activity: [zero, v('--act-1'), v('--act-2'), v('--act-3'), v('--act-4'), v('--act-5')],
     kind: { code: v('--kind-code'), docs: v('--kind-docs'), asset: v('--kind-asset'), data: other, other },
     change: v('--change'),
+    pointer: v('--pointer'),
     unsampled: hatch(ctx, zero, v('--frame-b')),
   }
 }

@@ -98,3 +98,24 @@ A review by a Claude Code session that will be the shared pointer's first user, 
 - **The shape of a change.** At the end of a task, `show` on the files it touched (new, changed, moved) with one caption is a visual handoff: the human sees where the work landed instead of reading a file list.
 - **Meaning before skeletons, tested cheaply.** The owner's stated pain is "where is what, and why". A first description anchored to paths and globs only (the case study's main parts and the conventions that cross its folders), drawn as regions, may answer it before symbol anchors exist. If it does, milestone 4 deserves to come before 3; if not, an afternoon is lost.
 - **What the pointer won't do.** In the case study, the problems the owner found by playing were about feel, not files. The board serves the architecture conversation; it shouldn't try to judge feel.
+
+### 15 October 2026: step 2 built (Claude)
+
+The owner set step 1d aside as a running list of visual tweaks, so the shared pointer came next. From the proposals above, adopted because each is cheap and serves the acceptance test:
+
+- **A stable "this":** `get_selection` returns the selection with when it was made, the HEAD at that time if it has moved since, and the last five selections. The reader adds the lines in view and any lines selected, so "this" can be a passage as well as a file.
+- **Pointers that stay and say who:** one per agent, replaced by its next `show` or dismissed by the human, named by the agent or after its MCP client.
+- **An answer when no window is open:** `get_selection` and `show` say that nobody is looking; `summary` scans the project itself.
+- **The shape of a change:** a convention in the server's instructions (point at the files you changed at the end of a task), not another tool.
+
+Deferred: per-agent outline colours, because the overlay palette already holds the selection, uncommitted changes and pointers, and a second pointer hue can wait until two agents point at once in practice; and a history of pointers.
+
+Choices made while building:
+
+- **Channel:** a named pipe per project root, current user only, one JSON line each way per call. The first window on a project serves it and a second takes over when the first closes. The MCP process looks for a window on its folder, then on each folder above it.
+- **Paths:** whatever an agent writes (absolute, relative to the root or to its own folder, either slash) resolves only to entries of the current scan, through the same index that now guards the reader's file reads. Unknown paths are reported back.
+- **Colour:** raspberry, `#c2257a` light and `#f566ab` dark, checked with the palette validator against the activity ramp, the kind hues and the uncommitted violet: CVD separation at least 9.3 and normal-vision separation at least 16.9 in both themes. Teal was rejected for falling below the chroma floor and sitting too close to the code blue. The dark value is above the categorical lightness band on purpose: it is an outline on a dark surface, not a fill.
+- **Captions beside the map:** the first version laid a card over a corner of the map. At narrow width it covered the tile it pointed at, against "overlays never erase measurements", so captions moved to the row under the map.
+- **Measurement:** a smoke run started while a FloorPlan window was open shared that window's WebView2 browser and GPU processes (same data folder). Memory then read about 300 MiB across 6 processes, and the first map looked about 200 ms faster. Smoke runs now use their own data folder, and the re-measured baseline matches the trial's.
+
+"Meaning before skeletons" stays open. After the acceptance test, a path-only description of the case study decides whether milestone 4 comes before 3.
