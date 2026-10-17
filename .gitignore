@@ -40,3 +40,6 @@ Thumbs.db
 
 # Claude Code keeps each person's permissions here; .claude/launch.json is shared.
 .claude/settings.local.json
+
+# Handoff notes between Claude sessions: local only, archived to docs/history/ once read
+/HANDOFF*.md

@@ -149,7 +149,7 @@ Later, `propose(overlay)` adds a proposed change as outlined regions and edges, 
 
 ## Milestones
 
-Built in this order, with one open question: whether 4 comes before 3. A path-only description of the case study, drawn on the map, settles it ([DISCOVERY.md](DISCOVERY.md)). Sizes are rough: S is about a session, M a couple, L several. [README.md](README.md) records what is done.
+Built in this order. Sizes are rough: S is about a session, M a couple, L several. [README.md](README.md) records what is done. On 17 October 2026 the order changed and the milestones were renumbered ([DISCOVERY.md](DISCOVERY.md)): earlier log entries use the old numbers, where 3 is now 5, 4 is split into 4 and 6, and 5 is now 7.
 
 | Step | Content | Size |
 |---|---|---|
@@ -158,10 +158,15 @@ Built in this order, with one open question: whether 4 comes before 3. A path-on
 | 1b | Reader pane: read-only source view with syntax colouring (CodeMirror), commit and working-change diffs; opens on click | M |
 | 1c | Remembered zoom and range per project; optional untracked scope | S |
 | 1d | Visual tweaks from the owner's use, collected as they come | S |
+| 1e | Since I was last here: the history range opens at the last HEAD seen, with a one-line briefing | S |
+| 1f | File finder (Ctrl+P) | S |
+| 1g | A second, much larger case study; performance budgets set on both | S |
 | 2 | Shared pointer (MCP) | S–M |
-| 3 | Inside files: skeletons and symbols | M–L |
-| 4 | Meaning connected to files | L |
-| 5 | Proposals | M |
+| 3 | Files that change together, with tests paired to code | S–M |
+| 4 | Meaning on paths: the agent-written description, drawn as named regions | M |
+| 5 | Inside files: skeletons and symbols | M–L |
+| 6 | Meaning on symbols: data, flows and documentation signals | L |
+| 7 | Proposals | M |
 | — | Before a first release: automated build, release executable | S |
 
 ### 1. Real repository map
@@ -178,25 +183,55 @@ Acceptance:
 - Scanning never freezes interaction. Time to first useful map, full scan time and idle memory are recorded on the case study, with budgets set from that baseline.
 - Fixtures cover paths with spaces and Unicode, Windows path behaviour, parent aggregation, renames and commit counts.
 
+#### 1e. Since I was last here
+
+Coming back to a project is the problem FloorPlan exists for, so the history range starts where the human left off. FloorPlan remembers, per project, the HEAD that was current when the human last used a window on it. Reopening the project opens the range at the first commit after that HEAD, and one line in the history row says what happened since: the number of commits, the regions they touched, and who made them. Agents are named only where commits name them in co-author lines, since agents commit under the owner's name. A window left open never moves a range the human is using; when its human returns after hours idle, it shows the briefing and offers the range. If the remembered commit is gone (a rebase) or older than the loaded history, the briefing says so instead of guessing. Agents read the same through the board, in their replies rather than a new tool, so they can brief the human unasked.
+
+Acceptance: on the case study, after commits land while FloorPlan is closed, reopening shows exactly those commits in the range, with a briefing whose counts match `git log <last HEAD>..HEAD`; an agent reads the same through MCP; a window in use is never reset.
+
+#### 1f. File finder
+
+Ctrl+P opens a fuzzy finder over the project's files and folders, answering at typing speed; choosing one zooms the map to it and selects it. It is invoked, not persistent, so the daily interface stays lean.
+
+Acceptance: any file of the case study is reachable with Ctrl+P and a few characters, and the map shows it selected.
+
+#### 1g. A second case study and the budgets
+
+Everything so far is tuned on the Godot game, which is young and fits under the 1,000-commit cap. A second, very different case study tests the limits before they set into habits: a large, old open-source repository with far more history than FloorPlan reads, proposed: the Godot engine. A clone with a little over 1,000 commits of history is enough. It is inspected read-only like the first. It checks the commit cap and Age's unknown ages, the test conventions of another ecosystem, scan and layout speed at that size, and the colours on a different shape of project. Milestone 1's performance budgets are then set from both baselines.
+
+Acceptance: scan time, first map and memory recorded on both projects, with budgets in README; whatever breaks or misleads at that size is fixed or recorded.
+
 ### 2. Shared pointer
 
 `floorplan.exe mcp` with `get_selection`, `show`, `summary` and `open`, registered once with Claude Code for every project.
 
 Acceptance: in a Claude Code session on the case study, the human selects a region and asks about "this", and the agent identifies it correctly. The agent highlights the files a planned change would touch, and the human sees them on the map.
 
-### 3. Inside files: skeletons and symbols
+### 3. Files that change together
+
+Selecting a file shows the files that change in the same commits: in the inspector with their evidence ("changed together in 6 of its 9 commits", leading to the commits), and on the map as ink outlines whose weight shows how often, since the relation belongs to the selection and needs no new hue. Agents' commits are broad, so commits that touch many files count for less and a pair needs a minimum of shared commits; the relation is "changes with", never "depends on". Tests paired with a code file are listed apart, by name (`test_x` and `x`, `x_test` and `x`, `XTests` and `X`, the conventions the test kind uses) or by changing together, and labelled as exactly that: pairing is not coverage. Agents can ask the board what changes with a file.
+
+Acceptance: on the case study, the pairs for a few files match a direct count from `git log`; a broad commit does not relate everything to everything; a code file's tests are found by name where the conventions allow.
+
+### 4. Meaning on paths
+
+The agent-written description for the case study, anchored to paths and globs only, drawn on the map as named regions: its systems, migration boundaries, current direction and findings, each with its basis and linked documents. It lives outside the project, in FloorPlan's local data, found through a per-project setting, and is produced by a FloorPlan-owned prompt; it doubles as a briefing for agents. Anchors are checked on every scan. How the regions are drawn is settled with the first working description, within the colour grammar. This comes before skeletons because "where is what, and why" often cuts across folders, and it needs no parsing.
+
+Acceptance: the user can locate the case study's main systems on the map and explain why they coexist. A broken anchor shows as stale after a rescan.
+
+### 5. Inside files: skeletons and symbols
 
 The map continues past a file: zooming into one shows its symbols (types, functions, data declarations, marked sections) as regions sized by lines, and the reader pane shows the skeleton as an outline whose bodies expand on demand. Parsing uses tree-sitter grammars and tag queries, read-only and on demand, so one engine provides colouring, skeletons and symbol identities. Symbols get stable IDs (path plus qualified name), which later milestones use as anchors. Relationships start with references by name and may later come from language servers or agent descriptions.
 
 Acceptance: on the case study, a GDScript, a Python and a shader file show correct skeletons with line counts; a symbol's ID survives an unrelated edit to its file; the skeleton reads faster than the file for learning what it does.
 
-### 4. Meaning connected to files
+### 6. Meaning on symbols
 
-The agent-written description for the case study; a system view and a code/data flow schematic linked to the physical map; anchor validation; documentation signals.
+The description gains what needs symbol anchors: data structures with their owners, readers, writers and lifetime; a system view and a code/data flow schematic linked to the physical map; documentation signals (observed links, review suggested, contradictions as agent findings).
 
-Acceptance: the user can locate the case study's main systems, explain why they coexist, and trace one important state or resource path into its source files. A broken anchor shows as stale after a rescan.
+Acceptance: the user can trace one important state or resource path into its source files, and a contradiction between a document and the code arrives as a finding with its evidence.
 
-### 5. Proposals
+### 7. Proposals
 
 `propose` overlays and diffs landing in place. Exercise a migration in the case study: retained code, reusable logic, its destination, a missing piece and the linked documents.
 

@@ -21,7 +21,7 @@ From the author's original note:
 
 ## Status
 
-Milestone 2 in use (16 October 2026). `floorplan.exe` opens a folder and draws every file as a nested treemap, and coding agents can ask what the human has selected, point at files and lines on it, and open it. Milestone 1 is complete except for its performance budgets, which are not set yet, and the owner's visual tweaks (step 1d), of which the first, a colour grammar with an Age lens and tests as their own kind, is in (17 October 2026).
+Milestone 2 in use (16 October 2026). `floorplan.exe` opens a folder and draws every file as a nested treemap, and coding agents can ask what the human has selected, point at files and lines on it, and open it. Of milestone 1, steps 1a–1c are done; the owner's visual tweaks (1d) continue, the first of them, a colour grammar with an Age lens and tests as their own kind, in since 17 October 2026; steps 1e–1g, added to the roadmap on 17 October, are open, and the performance budgets wait for 1g.
 
 Working:
 
@@ -37,7 +37,7 @@ Working:
 
 In the agent's second round on the case study, mouse-selected text reached the agent, clearing a pointer worked, and `open` raised a window; whether a window an agent opened outlives the agent's session is not yet tried.
 
-Next: a path-only description of the case study, to decide whether milestone 4 comes before 3. Visual tweaks (step 1d) arrive as the owner collects them. See the [roadmap](DESIGN.md#milestones).
+Next: 1e, "since I was last here", and 1f, the file finder; then 1g, a second case study with the performance budgets. See the [roadmap](DESIGN.md#milestones).
 
 Case-study baseline (a private Godot game: 2,862 files, 467 commits; published executable, 1600×1000 window):
 
