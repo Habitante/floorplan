@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { applyPointer, boardView, commonFolder, pointedNodes, pulse } from './board'
+import { applyPointer, boardView, commonFolder, describeItem, pointedLines, pointedNodes, pulse } from './board'
 import { buildModel } from './model'
-import type { Pointer } from './state'
-import type { Scan, ScanNode } from './types'
+import { NO_LINES, type Pointer } from './state'
+import type { PointerItem, Scan, ScanNode } from './types'
 
 const file = (path: string, id: number, lines: number): ScanNode =>
   ({ name: path.split('/').pop()!, path, id, kind: 'code', status: 'ok', lines, bytes: lines * 10 })
@@ -31,14 +31,15 @@ const scan: Scan = {
 }
 const model = buildModel(scan)
 const node = (path: string) => model.byPath.get(path)!
-const pointer = (agent: string, paths: string[], arrived = 0): Pointer => ({ agent, caption: '', paths, at: 0, arrived })
+const pointer = (agent: string, items: (string | PointerItem)[], arrived = 0): Pointer =>
+  ({ agent, caption: '', items: items.map(i => (typeof i === 'string' ? { path: i } : i)), at: 0, arrived })
 
 describe('pointers', () => {
   it('keep one per agent, newest last, and clear on an empty list', () => {
     let list = applyPointer([], pointer('Claude', ['a']))
     list = applyPointer(list, pointer('Codex', ['b']))
     list = applyPointer(list, pointer('Claude', ['a/x.gd']))
-    expect(list.map(p => [p.agent, p.paths])).toEqual([['Codex', ['b']], ['Claude', ['a/x.gd']]])
+    expect(list.map(p => [p.agent, p.items.map(i => i.path)])).toEqual([['Codex', ['b']], ['Claude', ['a/x.gd']]])
     expect(applyPointer(list, pointer('Codex', [])).map(p => p.agent)).toEqual(['Claude'])
     expect(applyPointer(list, pointer('Third', ['b']), 2).map(p => p.agent)).toEqual(['Claude', 'Third'])
   })
@@ -46,6 +47,22 @@ describe('pointers', () => {
   it('resolve to nodes still in the scan', () => {
     const nodes = pointedNodes(model, [pointer('A', ['a/x.gd', 'gone.gd', 'b']), pointer('B', ['b'])])
     expect(nodes.map(n => n.path)).toEqual(['a/x.gd', 'b'])
+  })
+
+  it('mark line ranges per file, from every agent', () => {
+    const list = [
+      pointer('A', [{ path: 'a/x.gd', from: 10, to: 20 }, 'a/y.gd']),
+      pointer('B', [{ path: 'a/x.gd', from: 40 }]),
+    ]
+    expect(pointedLines(list, 'a/x.gd')).toEqual([[10, 20], [40, 40]])
+    expect(pointedLines(list, 'a/y.gd')).toEqual([])
+  })
+
+  it('read back as agents wrote them', () => {
+    expect(describeItem({ path: 'a/x.gd' })).toBe('a/x.gd')
+    expect(describeItem({ path: 'a/x.gd', from: 4, to: 4 })).toBe('a/x.gd:4')
+    expect(describeItem({ path: 'a/x.gd', from: 4, to: 9 })).toBe('a/x.gd:4-9')
+    expect(describeItem({ path: 'a', note: 'a/renders/frame.png' })).toBe('a/renders/frame.png')
   })
 
   it('go to the deepest folder holding everything they name', () => {
@@ -71,9 +88,10 @@ describe('board view', () => {
     commit: null,
     range: [0, 3],
     reader: null,
-    lines: { visible: null, selection: null },
+    lines: NO_LINES,
     area: 'lines',
     fill: 'activity',
+    theme: 'dark',
     ...overrides,
   })
 
@@ -83,13 +101,13 @@ describe('board view', () => {
     expect(view({ range: [0, 2] }).range).toEqual({ from: 'c1', to: 'c2', count: 2, latest: false })
   })
 
-  it('reports what the human chose by path and commit', () => {
+  it('reports what the human chose by path and commit, with the selected text', () => {
     const v = view({
       focus: node('a'),
       selected: node('a/x.gd'),
       commit: 2,
       reader: { node: node('a/x.gd'), commit: 'working' },
-      lines: { visible: [1, 40], selection: [12, 14] },
+      lines: { visible: [1, 40], selection: [12, 14], text: 'func _ready():', removed: true },
       area: 'bytes',
     })
     expect(v).toEqual({
@@ -97,9 +115,10 @@ describe('board view', () => {
       selected: 'a/x.gd',
       commit: 'c3',
       range: { from: 'c1', to: 'c3', count: 3, latest: true },
-      reader: { path: 'a/x.gd', commit: 'working', visible: [1, 40], selection: [12, 14] },
+      reader: { path: 'a/x.gd', commit: 'working', visible: [1, 40], selection: [12, 14], text: 'func _ready():', removed: true },
       area: 'bytes',
       fill: 'activity',
+      theme: 'dark',
     })
   })
 
@@ -107,7 +126,7 @@ describe('board view', () => {
     const plain = buildModel({ ...scan, commits: [] })
     expect(boardView(plain, {
       focus: plain.root, selected: null, commit: null, range: [0, 0], reader: null,
-      lines: { visible: null, selection: null }, area: 'lines', fill: 'kind',
+      lines: NO_LINES, area: 'lines', fill: 'kind', theme: 'light',
     }).range).toBeNull()
   })
 })

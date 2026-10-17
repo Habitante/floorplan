@@ -3,8 +3,9 @@ using System.Text.Json;
 
 namespace FloorPlan.Core;
 
-// What agents receive from the board tools, serialised with ScanJson.Options. Measurements keep
-// the map's meaning: "lines" is physical lines in code and documentation files, the Lines area.
+// What agents receive from the board tools, serialised with ScanJson.Options. A file's "lines" are
+// its physical lines; a folder's "codeAndDocLines" are those of its code and documentation files,
+// the Lines area on the map.
 
 public sealed record RangeReport
 {
@@ -22,7 +23,10 @@ public sealed record NodeReport
     public required string Type { get; init; }
     public string? Kind { get; init; }
     public int? Files { get; init; }
+    /// <summary>A file's physical lines.</summary>
     public long? Lines { get; init; }
+    /// <summary>A folder's lines in code and documentation files.</summary>
+    public long? CodeAndDocLines { get; init; }
     public long? Bytes { get; init; }
     public int? CommitsInRange { get; init; }
     /// <summary>A file's uncommitted change.</summary>
@@ -39,13 +43,20 @@ public sealed record NodeReport
 public sealed record ReaderReport
 {
     public required string Path { get; init; }
-    /// <summary>"file", "uncommitted diff" or "diff of commit &lt;sha&gt;"; line numbers refer to that version.</summary>
+    /// <summary>"file", "uncommitted diff" or "diff of commit &lt;sha&gt;".</summary>
     public required string Showing { get; init; }
+    /// <summary>The version the line numbers count in; a diff's removed lines have none.</summary>
+    public required string LineNumbers { get; init; }
     public int[]? VisibleLines { get; init; }
     public int[]? SelectedLines { get; init; }
+    public string? SelectedText { get; init; }
+    public bool? SelectionIncludesRemovedLines { get; init; }
     public DateTimeOffset? OpenedAt { get; init; }
     public long? SecondsAgo { get; init; }
 }
+
+/// <summary>Another open window, so the agent knows what else the human has on screen.</summary>
+public sealed record WindowReport(string Project, long IdleSeconds, bool Focused);
 
 public sealed record CommitReport
 {
@@ -63,6 +74,10 @@ public sealed record SelectionReport
 {
     public bool Window { get; init; } = true;
     public required string Project { get; init; }
+    /// <summary>Since the human last did something in this window.</summary>
+    public long IdleSeconds { get; init; }
+    /// <summary>The window has been idle long enough that the selection may no longer be what the human means.</summary>
+    public bool? Stale { get; init; }
     public string? Head { get; init; }
     public NodeReport? Selected { get; init; }
     public ReaderReport? Reader { get; init; }
@@ -73,7 +88,10 @@ public sealed record SelectionReport
     public RangeReport? Range { get; init; }
     public required string Area { get; init; }
     public required string Fill { get; init; }
+    public required string Theme { get; init; }
     public IReadOnlyList<NodeReport>? Recent { get; init; }
+    /// <summary>Other open windows; added by the agent's server, which sees them all.</summary>
+    public IReadOnlyList<WindowReport>? OtherWindows { get; init; }
 }
 
 public sealed record SummaryReport
@@ -85,7 +103,10 @@ public sealed record SummaryReport
     public required string Type { get; init; }
     public string? Kind { get; init; }
     public int Files { get; init; }
+    /// <summary>A file's physical lines.</summary>
     public long? Lines { get; init; }
+    /// <summary>A folder's lines in code and documentation files; <see cref="Composition"/> adds data.</summary>
+    public long? CodeAndDocLines { get; init; }
     public long? Bytes { get; init; }
     public int? Unmeasured { get; init; }
     public string? Note { get; init; }
@@ -102,16 +123,30 @@ public sealed record ShowReport
 {
     /// <summary>True when a window showed the pointer.</summary>
     public bool Window { get; init; }
+    public string? Project { get; init; }
+    /// <summary>How many windows on the project drew it; added by the agent's server.</summary>
+    public int? Windows { get; init; }
+    /// <summary>What is outlined, with line ranges as "path:from-to".</summary>
     public IReadOnlyList<string> Shown { get; init; } = [];
+    /// <summary>Paths that exist but are not on the map; their nearest folder on the map is outlined instead.</summary>
+    public IReadOnlyList<OffMap>? NotOnMap { get; init; }
+    /// <summary>Paths that are not in the project at all.</summary>
     public IReadOnlyList<string>? Unknown { get; init; }
     public string? Note { get; init; }
 }
+
+/// <param name="ShownAs">The nearest folder on the map, outlined in its place; null when that is the whole project.</param>
+/// <param name="Reason">"ignored by Git", "untracked" or "outside the scan"; added by the agent's server.</param>
+public sealed record OffMap(string Path, string? ShownAs, string? Reason = null);
 
 public static class BoardReports
 {
     public const int LargestLimit = 12;
     public const int CommitLimit = 10;
     public const int UncommittedLimit = 25;
+    public const int SelectedTextLimit = 4000;
+    /// <summary>A window idle this long may no longer show what the human means.</summary>
+    public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(10);
 
     public static string Date(long unixSeconds) =>
         DateTimeOffset.FromUnixTimeSeconds(unixSeconds).ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
@@ -130,7 +165,8 @@ public static class BoardReports
             Type = node.IsFile ? "file" : "folder",
             Kind = node.Kind is { } kind ? Name(kind) : null,
             Files = node.IsFile ? null : node.Files,
-            Lines = node.IsFile ? node.Lines : (node.Code ?? 0) + (node.Docs ?? 0),
+            Lines = node.IsFile ? node.Lines : null,
+            CodeAndDocLines = node.IsFile ? null : (node.Code ?? 0) + (node.Docs ?? 0),
             Bytes = node.Bytes,
             CommitsInRange = window?.Count(node),
             Uncommitted = node.Change is { } change ? Name(change) : null,
@@ -162,6 +198,8 @@ public static class BoardReports
         ReaderReport? reader = null;
         if (view.Reader is { } open)
         {
+            var text = string.IsNullOrEmpty(open.Text) ? null
+                : open.Text.Length > SelectedTextLimit ? open.Text[..SelectedTextLimit] + "…" : open.Text;
             reader = new ReaderReport
             {
                 Path = open.Path,
@@ -171,8 +209,17 @@ public static class BoardReports
                     "working" => "uncommitted diff",
                     var sha => $"diff of commit {Short(sha)}",
                 },
+                // A diff shows the newer version, with removed lines in between.
+                LineNumbers = open.Commit switch
+                {
+                    null => "the file in the working tree",
+                    "working" => "the file in the working tree; removed lines are unnumbered",
+                    var sha => $"the file as of commit {Short(sha)}; removed lines are unnumbered",
+                },
                 VisibleLines = Lines(open.Visible),
                 SelectedLines = Lines(open.Selection),
+                SelectedText = text,
+                SelectionIncludesRemovedLines = open.Removed ? true : null,
                 OpenedAt = state.Reading?.At,
                 SecondsAgo = state.Reading is { } r ? Seconds(now - r.At) : null,
             };
@@ -192,9 +239,12 @@ public static class BoardReports
                 : null,
         };
 
+        var idle = now - state.LastActive;
         return new SelectionReport
         {
             Project = index.Root,
+            IdleSeconds = Seconds(idle),
+            Stale = idle >= StaleAfter ? true : null,
             Head = project.Head is { } head ? Short(head) : null,
             Selected = state.Selected is { } selected ? Stamped(selected, measure: true) : null,
             Reader = reader,
@@ -203,6 +253,7 @@ public static class BoardReports
             Range = window?.Report(),
             Area = view.Area,
             Fill = view.Fill,
+            Theme = view.Theme,
             Recent = state.Recent.Count > 0 ? state.Recent.Select(r => Stamped(r, measure: false)).ToList() : null,
         };
     }
@@ -261,6 +312,7 @@ public static class BoardReports
             Kind = measures.Kind,
             Files = files.Count,
             Lines = measures.Lines,
+            CodeAndDocLines = measures.CodeAndDocLines,
             Bytes = measures.Bytes,
             Unmeasured = node.Unmeasured is > 0 ? node.Unmeasured : null,
             Note = node.Note,

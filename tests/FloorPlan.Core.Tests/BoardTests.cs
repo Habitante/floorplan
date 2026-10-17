@@ -14,8 +14,8 @@ public class BoardTests
         const string json = """
             {"focus":"scenes","selected":"scenes/world.gd","commit":"working",
              "range":{"from":"aaa","to":"bbb","count":2,"latest":false},
-             "reader":{"path":"scenes/world.gd","commit":null,"visible":[1,40],"selection":[3,5]},
-             "area":"bytes","fill":"kind"}
+             "reader":{"path":"scenes/world.gd","commit":null,"visible":[1,40],"selection":[3,5],"text":"func a():","removed":true},
+             "area":"bytes","fill":"kind","theme":"dark"}
             """;
         var view = JsonSerializer.Deserialize<BoardView>(json, ScanJson.Options)!;
 
@@ -27,8 +27,11 @@ public class BoardTests
         Assert.Null(view.Reader.Commit);
         Assert.Equal([1, 40], view.Reader.Visible!);
         Assert.Equal([3, 5], view.Reader.Selection!);
+        Assert.Equal("func a():", view.Reader.Text);
+        Assert.True(view.Reader.Removed);
         Assert.Equal("bytes", view.Area);
         Assert.Equal("kind", view.Fill);
+        Assert.Equal("dark", view.Theme);
         Assert.Null(JsonSerializer.Deserialize<BoardView>("""{"focus":"","reader":null,"range":null}""", ScanJson.Options)!.Reader);
     }
 
@@ -99,7 +102,8 @@ public class BoardTests
         Assert.True(report.Window);
         Assert.Equal("folder", report.Type);
         Assert.Equal(3, report.Files);
-        Assert.Equal(3, report.Lines);                    // world.gd (now 2 lines) + holding.gd; the scene is data
+        Assert.Equal(3, report.CodeAndDocLines);          // world.gd (now 2 lines) + holding.gd; the scene is data
+        Assert.Null(report.Lines);
         Assert.Equal(1, report.Composition!["data"].Lines);
         Assert.Equal(2, report.Composition["code"].Files);
         Assert.Equal(3, report.CommitsInRange);           // Start, Grow the world, Hold
@@ -148,6 +152,7 @@ public class BoardTests
             Commit = "working",
             Reader = new BoardReader("scenes/world.gd", scan.Commits[0].Sha, [1, 6], [2, 3]),
             Range = new BoardRange(null, null, 2, Latest: true),
+            Theme = "dark",
         }, scan.Project.Head, T0.AddSeconds(10));
 
         var report = BoardReports.Selection(index, state, T0.AddSeconds(70));
@@ -159,7 +164,12 @@ public class BoardTests
         Assert.Equal(6, report.Selected.Lines);
         Assert.Equal(1, report.Selected.CommitsInRange);
         Assert.Equal($"diff of commit {scan.Commits[0].Sha[..10]}", report.Reader!.Showing);
+        Assert.StartsWith($"the file as of commit {scan.Commits[0].Sha[..10]}", report.Reader.LineNumbers);
         Assert.Equal([2, 3], report.Reader.SelectedLines!);
+        Assert.Equal("dark", report.Theme);
+        Assert.Equal(60, report.IdleSeconds);
+        Assert.Null(report.Stale);
+        Assert.True(BoardReports.Selection(index, state, T0.AddMinutes(11)).Stale);
         Assert.Equal("working", report.Commit!.Sha);
         Assert.Equal(2, report.Range!.Commits);
         Assert.Equal("core", Assert.Single(report.Recent!).Path);

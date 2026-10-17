@@ -1,7 +1,7 @@
 import { useSignal } from '@preact/signals'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { ACTIVITY_STEP_LABELS } from './activity'
-import { pointedNodes } from './board'
+import { describeItem, pointedNodes } from './board'
 import { dismissPointer, goTo } from './board-controller'
 import { send } from './bridge'
 import * as format from './format'
@@ -278,8 +278,8 @@ function PointerChips({ model: m }: { model: Model }) {
         const outside = f ? nodes.filter(n => !contains(f, n)).length : 0
         const detail = [
           `${p.agent} · ${format.dateLong(new Date(p.at))}`,
-          ...nodes.slice(0, 12).map(n => n.path || displayName(m, n)),
-          nodes.length > 12 ? `+${format.int(nodes.length - 12)} more` : '',
+          ...p.items.slice(0, 12).map(i => (i.note ? `${i.note} (not on the map; ${i.path} outlined)` : describeItem(i))),
+          p.items.length > 12 ? `+${format.int(p.items.length - 12)} more` : '',
           outside > 0 ? `${format.int(outside)} outside this view` : '',
         ].filter(Boolean).join('\n')
         return (

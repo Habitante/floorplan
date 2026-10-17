@@ -66,8 +66,39 @@ public sealed class ProjectIndex
         var text = path.Trim();
         if (text is "" or "." or "/" or "\\") return Tree;
 
-        // "/scenes/world.gd" is rooted on the current drive; agents mean the project root.
-        var relative = !Path.IsPathFullyQualified(text) && Path.IsPathRooted(text) ? text.TrimStart('/', '\\') : text;
+        foreach (var full in FullPaths(text, workingFolder))
+            if (RelativePath(full) is { } inside && Lookup(inside) is { } node) return node;
+        // Names that full-path normalisation would alter, such as a trailing dot.
+        return Lookup(Relative(text).Replace('\\', '/').Trim('/'));
+    }
+
+    /// <summary>
+    /// For a path that is not in the scan but exists inside the project (ignored by Git,
+    /// untracked, or excluded from the scan): its project-relative path. Null otherwise.
+    /// </summary>
+    public string? FindOnDisk(string? path, string? workingFolder = null)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        foreach (var full in FullPaths(path.Trim(), workingFolder))
+            if (RelativePath(full) is { Length: > 0 } inside && (System.IO.File.Exists(full) || Directory.Exists(full))) return inside;
+        return null;
+    }
+
+    /// <summary>The nearest entry of the scan at or above a project-relative path.</summary>
+    public TreeNode Nearest(string relative)
+    {
+        for (var path = relative; path.Length > 0; path = path.Contains('/') ? path[..path.LastIndexOf('/')] : "")
+            if (Lookup(path) is { } node) return node;
+        return Tree;
+    }
+
+    /// <summary>"/scenes/world.gd" is rooted on the current drive; agents mean the project root.</summary>
+    static string Relative(string text) => !Path.IsPathFullyQualified(text) && Path.IsPathRooted(text) ? text.TrimStart('/', '\\') : text;
+
+    /// <summary>The full paths a written path may mean: from the agent's folder, then from the root.</summary>
+    IEnumerable<string> FullPaths(string text, string? workingFolder)
+    {
+        var relative = Relative(text);
         foreach (var folder in workingFolder is null ? [Root] : new[] { workingFolder, Root })
         {
             string full;
@@ -77,12 +108,10 @@ public sealed class ProjectIndex
             }
             catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
             {
-                return null;
+                yield break;
             }
-            if (RelativePath(full) is { } inside && Lookup(inside) is { } node) return node;
+            yield return full;
         }
-        // Names that full-path normalisation would alter, such as a trailing dot.
-        return Lookup(relative.Replace('\\', '/').Trim('/'));
     }
 
     TreeNode? Lookup(string relative) =>

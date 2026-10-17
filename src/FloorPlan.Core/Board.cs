@@ -15,6 +15,8 @@ public sealed class BoardView
     public BoardReader? Reader { get; init; }
     public string Area { get; init; } = "lines";
     public string Fill { get; init; } = "activity";
+    /// <summary>"light" or "dark", as the window is drawn.</summary>
+    public string Theme { get; init; } = "light";
 }
 
 /// <param name="From">Oldest commit in the range.</param>
@@ -23,15 +25,21 @@ public sealed class BoardView
 public sealed record BoardRange(string? From, string? To, int Count, bool Latest);
 
 /// <param name="Commit">A SHA when the reader shows that commit's diff; "working" for the uncommitted diff.</param>
-/// <param name="Visible">First and last line in view.</param>
+/// <param name="Visible">First and last line in view, numbered in the version shown.</param>
 /// <param name="Selection">First and last line of the selected text.</param>
-public sealed record BoardReader(string Path, string? Commit, int[]? Visible, int[]? Selection);
+/// <param name="Text">The selected text itself.</param>
+/// <param name="Removed">The selection includes lines a diff shows as removed, which have no number.</param>
+public sealed record BoardReader(string Path, string? Commit, int[]? Visible, int[]? Selection, string? Text = null, bool Removed = false);
 
 /// <summary>A file or folder the human chose, when, and the HEAD at that moment.</summary>
 public sealed record Choice(string Path, DateTimeOffset At, string? Head);
 
-/// <summary>An agent's pointer: files and folders outlined on the map with a caption, until replaced or dismissed.</summary>
-public sealed record Pointer(string Agent, string Caption, IReadOnlyList<string> Paths, DateTimeOffset At);
+/// <summary>One thing a pointer outlines: a file or folder of the scan, optionally a range of a file's lines.</summary>
+/// <param name="Note">What the agent named, when it is not on the map and this is the nearest folder that is.</param>
+public sealed record PointerItem(string Path, int? From = null, int? To = null, string? Note = null);
+
+/// <summary>An agent's pointer: things outlined on the map with a caption, until replaced or dismissed.</summary>
+public sealed record Pointer(string Agent, string Caption, IReadOnlyList<PointerItem> Items, DateTimeOffset At);
 
 /// <summary>
 /// The window's half of the shared board: the latest view, when its selection was made and at
@@ -48,9 +56,14 @@ public sealed class BoardState
     public Choice? Reading { get; private set; }
     /// <summary>Earlier selections, newest first.</summary>
     public IReadOnlyList<Choice> Recent => recent;
+    /// <summary>When the human last did something in the window: changed the view or brought it forward.</summary>
+    public DateTimeOffset LastActive { get; private set; } = DateTimeOffset.Now;
+
+    public void Touch(DateTimeOffset now) => LastActive = now;
 
     public void Update(BoardView view, string? head, DateTimeOffset now)
     {
+        LastActive = now;
         if (view.Selected != Selected?.Path)
         {
             if (Selected is not null) Remember(Selected);
@@ -64,7 +77,8 @@ public sealed class BoardState
 
     public void Reset()
     {
-        View = new BoardView();
+        // The theme belongs to the window, not to the project.
+        View = new BoardView { Theme = View.Theme };
         Selected = null;
         Reading = null;
         recent.Clear();

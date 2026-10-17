@@ -561,3 +561,4 @@ button.row:hover { background: var(--hover); }
 .reader .cm-deletedText, .reader .cm-deletedChunk del { background: var(--diff-del-text) !important; text-decoration: none; }
 .reader .cm-deletedLineGutter { background: var(--diff-del-text) !important; }
 .reader .cm-collapsedLines { background: var(--frame-a); color: var(--ink-3); font: 12px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+.reader .cm-pointed { background: color-mix(in srgb, var(--pointer) 14%, transparent); box-shadow: inset 3px 0 0 var(--pointer); }

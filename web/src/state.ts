@@ -1,7 +1,7 @@
 import { batch, computed, effect, signal } from '@preact/signals'
 import { countActivity, markCommit, markNodes } from './activity'
 import { buildModel, type Footprint, type Model, type Node } from './model'
-import type { Scan } from './types'
+import type { PointerItem, Scan } from './types'
 
 export type Lens = 'activity' | 'kind'
 
@@ -37,14 +37,24 @@ export const reader = signal<ReaderTarget | null>(null)
 export interface ReaderLines {
   visible: [number, number] | null
   selection: [number, number] | null
+  /** The selected text, which also covers a diff's removed lines. */
+  text: string | null
+  /** The selection includes lines a diff shows as removed. */
+  removed: boolean
 }
-export const readerLines = signal<ReaderLines>({ visible: null, selection: null })
+export const NO_LINES: ReaderLines = { visible: null, selection: null, text: null, removed: false }
+export const readerLines = signal<ReaderLines>(NO_LINES)
+/** Lines the reader should bring into view for a pointer, once it shows that file. */
+export const readerFocus = signal<{ path: string; from: number; to: number } | null>(null)
+
+/** The theme the window is drawn in. */
+export const theme = signal<'light' | 'dark'>('light')
 
 /** An agent's pointer: paths outlined on the map with a caption, until replaced or dismissed. */
 export interface Pointer {
   agent: string
   caption: string
-  paths: string[]
+  items: PointerItem[]
   /** When the agent pointed, Unix milliseconds. */
   at: number
   /** When it arrived, on the performance clock, for the arrival pulse. */

@@ -1,6 +1,6 @@
 import { contains, type Footprint, type Model, type Node } from './model'
 import type { Lens, Pointer, ReaderLines, ReaderTarget } from './state'
-import type { BoardView } from './types'
+import type { BoardView, PointerItem } from './types'
 
 // The shared board, front-end side: what the human is looking at goes to the host for agents,
 // and agents' pointers come back to be drawn on the map. Pure functions; board-controller.ts
@@ -12,19 +12,37 @@ const PULSE_MS = 1400
 /** Adds an agent's pointer, replacing its previous one; a pointer without paths clears it. */
 export function applyPointer(list: readonly Pointer[], pointer: Pointer, limit = POINTER_LIMIT): Pointer[] {
   const others = list.filter(p => p.agent !== pointer.agent)
-  return pointer.paths.length === 0 ? others : [...others, pointer].slice(-limit)
+  return pointer.items.length === 0 ? others : [...others, pointer].slice(-limit)
 }
 
 /** The nodes the pointers name; paths that left the scan since are skipped. */
 export function pointedNodes(m: Model, list: readonly Pointer[]): Node[] {
   const nodes: Node[] = []
   for (const pointer of list) {
-    for (const path of pointer.paths) {
-      const node = m.byPath.get(path)
+    for (const item of pointer.items) {
+      const node = m.byPath.get(item.path)
       if (node && !nodes.includes(node)) nodes.push(node)
     }
   }
   return nodes
+}
+
+/** Line ranges the pointers mark in one file. */
+export function pointedLines(list: readonly Pointer[], path: string): [number, number][] {
+  const ranges: [number, number][] = []
+  for (const pointer of list) {
+    for (const item of pointer.items) {
+      if (item.path === path && item.from !== undefined) ranges.push([item.from, item.to ?? item.from])
+    }
+  }
+  return ranges
+}
+
+/** An item as agents write it: "path", "path:from" or "path:from-to". */
+export function describeItem(item: PointerItem): string {
+  if (item.note) return item.note
+  if (item.from === undefined) return item.path
+  return item.to !== undefined && item.to !== item.from ? `${item.path}:${item.from}-${item.to}` : `${item.path}:${item.from}`
 }
 
 /** The deepest folder holding all the nodes. */
@@ -61,6 +79,7 @@ export function boardView(
     lines: ReaderLines
     area: Footprint
     fill: Lens
+    theme: 'light' | 'dark'
   },
 ): BoardView {
   const sha = (index: number) => m.commits[index]?.sha ?? null
@@ -76,8 +95,11 @@ export function boardView(
       commit: open.commit === null ? null : open.commit === 'working' ? 'working' : sha(open.commit),
       visible: view.lines.visible,
       selection: view.lines.selection,
+      text: view.lines.text,
+      removed: view.lines.removed,
     },
     area: view.area,
     fill: view.fill,
+    theme: view.theme,
   }
 }

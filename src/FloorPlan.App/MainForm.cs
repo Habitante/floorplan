@@ -66,6 +66,10 @@ sealed class MainForm : Form, IBoardSurface
     protected override async void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
+        // Agents find the window by its own pipe, whichever project it shows.
+        boardServer = new BoardServer(BoardChannel.PipeName(Environment.ProcessId),
+            request => OnUiThread(() => BoardService.Handle(this, request, DateTimeOffset.Now)), AppData.Log);
+        Activated += (_, _) => board.Touch(DateTimeOffset.Now);
         try
         {
             await InitializeWebViewAsync();
@@ -415,21 +419,29 @@ sealed class MainForm : Form, IBoardSurface
         web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(message, ScanJson.Options));
     }
 
-    /// <summary>Serves the board for the project on screen; a different project starts a fresh board.</summary>
+    /// <summary>A different project starts a fresh board.</summary>
     void ServeBoard(string root)
     {
-        if (boardServer is not null && boardRoot == root) return;
-        _ = boardServer?.DisposeAsync();
+        if (boardRoot == root) return;
         board.Reset();
         boardRoot = root;
-        boardServer = new BoardServer(root, request => OnUiThread(() => BoardService.Handle(this, request, DateTimeOffset.Now)), AppData.Log);
     }
 
     ProjectIndex? IBoardSurface.Index => index;
     BoardState IBoardSurface.State => board;
+    bool IBoardSurface.Focused => ActiveForm == this;
 
-    void IBoardSurface.Point(Pointer pointer) =>
-        Post(new { type = "pointer", agent = pointer.Agent, caption = pointer.Caption, paths = pointer.Paths, at = pointer.At.ToUnixTimeMilliseconds() });
+    void IBoardSurface.Point(Pointer pointer, bool reveal) => Post(new
+    {
+        type = "pointer",
+        agent = pointer.Agent,
+        caption = pointer.Caption,
+        items = pointer.Items,
+        at = pointer.At.ToUnixTimeMilliseconds(),
+        reveal,
+    });
+
+    void IBoardSurface.Raise() => NativeMethods.RaiseWithoutFocus(Handle);
 
     /// <summary>Runs work on the UI thread, which owns the scan, the board and the front end.</summary>
     Task<T> OnUiThread<T>(Func<T> work)

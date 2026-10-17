@@ -81,7 +81,21 @@ export interface BoardView {
     visible: [number, number] | null
     /** First and last line of the selected text. */
     selection: [number, number] | null
+    /** The selected text itself. */
+    text: string | null
+    /** The selection includes lines a diff shows as removed, which have no number. */
+    removed: boolean
   } | null
   area: 'lines' | 'bytes'
   fill: 'activity' | 'kind'
+  theme: 'light' | 'dark'
+}
+
+/** One thing an agent points at: a path of the scan, optionally a file's lines. */
+export interface PointerItem {
+  path: string
+  from?: number
+  to?: number
+  /** What the agent named when it is not on the map and this is the nearest folder that is. */
+  note?: string
 }

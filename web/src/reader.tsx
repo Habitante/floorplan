@@ -15,15 +15,16 @@ import { toml } from '@codemirror/legacy-modes/mode/toml'
 import { html, xml } from '@codemirror/legacy-modes/mode/xml'
 import { yaml } from '@codemirror/legacy-modes/mode/yaml'
 import { unifiedMergeView } from '@codemirror/merge'
-import { EditorState, type Extension } from '@codemirror/state'
-import { EditorView, highlightSpecialChars, lineNumbers } from '@codemirror/view'
+import { Compartment, EditorState, RangeSetBuilder, type Extension, type Text } from '@codemirror/state'
+import { Decoration, EditorView, highlightSpecialChars, lineNumbers } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { request } from './bridge'
 import * as format from './format'
 import { Icon } from './icons'
 import { displayName, type Model } from './model'
-import { activity, range, reader, readerLines, type ReaderTarget } from './state'
+import { pointedLines } from './board'
+import { activity, NO_LINES, pointers, range, reader, readerFocus, readerLines, type ReaderTarget } from './state'
 
 /** GDScript reads well as Python once its own declaration words count as keywords. */
 const GDSCRIPT_WORDS = new Set([
@@ -99,12 +100,20 @@ const base: Extension = [
   syntaxHighlighting(highlight),
 ]
 
-/** Reports the lines in view and the lines of selected text, so agents know which part is "this". */
+const SELECTED_TEXT_LIMIT = 4000
+
+/** Reports the lines in view and the selected text, so agents know which part is "this". */
 function trackLines(view: EditorView): () => void {
   let frame = 0
   const update = () => {
     frame = 0
-    readerLines.value = { visible: visibleLines(view), selection: selectedLines(view) }
+    const chosen = selectedText(view)
+    readerLines.value = {
+      visible: visibleLines(view),
+      selection: chosen?.lines ?? null,
+      text: chosen?.text ?? null,
+      removed: chosen?.removed ?? false,
+    }
   }
   const schedule = () => {
     if (!frame) frame = requestAnimationFrame(update)
@@ -119,8 +128,17 @@ function trackLines(view: EditorView): () => void {
     resize.disconnect()
     view.scrollDOM.removeEventListener('scroll', schedule)
     document.removeEventListener('selectionchange', schedule)
-    readerLines.value = { visible: null, selection: null }
+    readerLines.value = NO_LINES
   }
+}
+
+/** The file's last line: a final newline leaves an empty editor line that wc and Git do not count. */
+function lastLine(doc: Text): number {
+  return doc.lines > 1 && doc.line(doc.lines).length === 0 ? doc.lines - 1 : doc.lines
+}
+
+function lineNumber(doc: Text, position: number): number {
+  return Math.min(doc.lineAt(position).number, lastLine(doc))
 }
 
 function visibleLines(view: EditorView): [number, number] | null {
@@ -129,11 +147,14 @@ function visibleLines(view: EditorView): [number, number] | null {
   const doc = view.state.doc
   const first = view.lineBlockAtHeight(box.top - view.documentTop)
   const last = view.lineBlockAtHeight(box.bottom - 1 - view.documentTop)
-  return [doc.lineAt(first.from).number, doc.lineAt(last.to).number]
+  return [lineNumber(doc, first.from), lineNumber(doc, last.to)]
 }
 
-/** The editor is read-only, so text selection lives in the page, not in the editor state. */
-function selectedLines(view: EditorView): [number, number] | null {
+/**
+ * The selected lines and text. The editor is read-only, so the selection lives in the page, not in
+ * the editor state; in a diff it may include removed lines, which have no number of their own.
+ */
+function selectedText(view: EditorView): { lines: [number, number]; text: string; removed: boolean } | null {
   const selection = document.getSelection()
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null
   const span = selection.getRangeAt(0)
@@ -142,10 +163,29 @@ function selectedLines(view: EditorView): [number, number] | null {
     const from = view.posAtDOM(span.startContainer, span.startOffset)
     const to = view.posAtDOM(span.endContainer, span.endOffset)
     const doc = view.state.doc
-    return [doc.lineAt(Math.min(from, to)).number, doc.lineAt(Math.max(from, to)).number]
+    const removed = [...view.contentDOM.querySelectorAll('.cm-deletedChunk')].some(chunk => span.intersectsNode(chunk))
+    return {
+      lines: [lineNumber(doc, Math.min(from, to)), lineNumber(doc, Math.max(from, to))],
+      text: selection.toString().slice(0, SELECTED_TEXT_LIMIT),
+      removed,
+    }
   } catch {
     return null
   }
+}
+
+const pointedLine = Decoration.line({ class: 'cm-pointed' })
+
+/** Marks the lines agents point at. */
+function lineHighlights(ranges: readonly [number, number][]): Extension {
+  return EditorView.decorations.of(view => {
+    const doc = view.state.doc
+    const lines = new Set<number>()
+    for (const [from, to] of ranges) for (let n = Math.max(1, from); n <= Math.min(to, lastLine(doc)); n++) lines.add(n)
+    const builder = new RangeSetBuilder<Decoration>()
+    for (const n of [...lines].sort((a, b) => a - b)) builder.add(doc.line(n).from, doc.line(n).from, pointedLine)
+    return builder.finish()
+  })
 }
 
 type Content =
@@ -165,6 +205,13 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
   const commit = target.commit
   const diff = commit !== null
   const sha = typeof commit === 'number' ? m.commits[commit]?.sha : undefined
+  const view = useRef<EditorView | null>(null)
+  const highlights = useRef(new Compartment())
+  // Agents' line numbers count in the working file, which a commit's diff does not show.
+  const workingFile = commit === null || commit === 'working'
+  const ranges = workingFile ? pointedLines(pointers.value, node.path) : []
+  const rangesKey = JSON.stringify(ranges)
+  const focusLines = readerFocus.value
 
   // Load whenever the file, the compared commit or the file on disk changes.
   useEffect(() => {
@@ -186,7 +233,7 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
   // One read-only editor per loaded content.
   useEffect(() => {
     if (!host.current || (content.state !== 'file' && content.state !== 'diff')) return
-    const extensions: Extension[] = [base, languageFor(node.path)]
+    const extensions: Extension[] = [base, languageFor(node.path), highlights.current.of(lineHighlights(ranges))]
     if (content.state === 'diff') {
       extensions.push(unifiedMergeView({
         original: content.before,
@@ -196,16 +243,32 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
         collapseUnchanged: { margin: 3, minSize: 6 },
       }))
     }
-    const view = new EditorView({
+    const editor = new EditorView({
       parent: host.current,
       state: EditorState.create({ doc: content.state === 'diff' ? content.after : content.text, extensions }),
     })
-    const stop = trackLines(view)
+    view.current = editor
+    const stop = trackLines(editor)
     return () => {
       stop()
-      view.destroy()
+      view.current = null
+      editor.destroy()
     }
   }, [content])
+
+  useEffect(() => {
+    view.current?.dispatch({ effects: highlights.current.reconfigure(lineHighlights(ranges)) })
+  }, [rangesKey])
+
+  // Bring an agent's lines into view once the file is shown.
+  useEffect(() => {
+    const editor = view.current
+    if (!editor || !focusLines || focusLines.path !== node.path || !workingFile) return
+    const doc = editor.state.doc
+    const line = doc.line(Math.min(Math.max(1, focusLines.from), lastLine(doc)))
+    editor.dispatch({ effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 48 }) })
+    readerFocus.value = null
+  }, [content, focusLines])
 
   // Recent commits in the selected range that touched this file, newest first.
   const [from, to] = range.value

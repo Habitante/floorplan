@@ -4,11 +4,17 @@ import { connect, send } from './bridge'
 import { App } from './components'
 import { loadIconFonts } from './icons'
 import { zoomOut } from './map-controller'
-import { applyScan, model, openReader, reader, selected, selectedCommit, status } from './state'
+import { applyScan, model, openReader, reader, selected, selectedCommit, status, theme } from './state'
 import './styles.css'
 
-const theme = new URLSearchParams(location.search).get('theme')
-if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme
+const forced = new URLSearchParams(location.search).get('theme')
+if (forced === 'light' || forced === 'dark') document.documentElement.dataset.theme = forced
+const dark = matchMedia('(prefers-color-scheme: dark)')
+const followTheme = () => {
+  theme.value = forced === 'light' || forced === 'dark' ? forced : dark.matches ? 'dark' : 'light'
+}
+dark.addEventListener('change', followTheme)
+followTheme()
 
 loadIconFonts()
 render(<App />, document.getElementById('app')!)

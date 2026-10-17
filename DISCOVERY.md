@@ -119,3 +119,19 @@ Choices made while building:
 - **Measurement:** a smoke run started while a FloorPlan window was open shared that window's WebView2 browser and GPU processes (same data folder). Memory then read about 300 MiB across 6 processes, and the first map looked about 200 ms faster. Smoke runs now use their own data folder, and the re-measured baseline matches the trial's.
 
 "Meaning before skeletons" stays open. After the acceptance test, a path-only description of the case study decides whether milestone 4 comes before 3.
+
+### 16 October 2026: step 2 in use (Claude)
+
+The owner and a Claude Code session working from the owner's "house" repository ran the acceptance test and more on the case study: "this" resolved exactly, `show` replaced a file list, and `summary` matched Git and `wc`. Its findings, most important first, and what came of them:
+
+- **One project per registration.** The agent lives in one repository and works across several, so a server tied to one project followed the wrong map. Now one server serves every window: each window has its own pipe and says which project it shows. A call goes to the project it names, else the one an absolute path points into, else the window the human used last, which is where "this" is. A name must be an open window's or an existing folder (beside the agent's folder counts); testing caught a bare name falling into the agent's own project.
+- **Line numbers in diffs.** The extra visible line was the editor's empty line after a final newline, now dropped. Replies say which version the numbers count in, flag selections that touch removed lines, and carry the selected text, which settles the rest and saves the agent a read.
+- **Two windows on one project.** Only the first window served the board, and nobody could tell which one that was. With a pipe per window, every window on the project draws a pointer and the reply counts them; there is no ownership to hand over.
+- **What the human sees.** The server's instructions now describe the map (area, fill, colours, outlines, caption row) and the view reports its theme.
+- **Opening or raising a window.** A new `open` tool, and `reveal` on `show`. Neither takes keyboard focus from the human, who is usually typing to the agent; a started window leaves the agent host's job, so it outlives the session.
+- **Stale selections.** Replies carry the window's idle time and `stale` after ten minutes without the human doing anything in it: idleness, not the selection's age, since a file selected long ago and read since is still "this".
+- **Ignored paths.** Paths that exist but are off the map come back as such, with the reason from `git check-ignore`, and their nearest folder on the map is outlined, since agents leave renders and reports there for the human.
+- **Line totals.** A folder's total is now `codeAndDocLines`, so it no longer reads as a mismatch with a composition that includes data.
+- **Wishes taken:** pointing at line ranges (`path:480-492`, highlighted in the reader) and the selected text in `get_selection`.
+
+The board protocol is version 2; windows and servers of version 1 must be restarted.

@@ -1,20 +1,21 @@
+using System.Globalization;
 using System.IO.Pipes;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 
 namespace FloorPlan.Core;
 
-/// <summary>A request from <c>floorplan mcp</c> to the window showing its project.</summary>
+/// <summary>A request from <c>floorplan mcp</c> to a window.</summary>
 public sealed class BoardRequest
 {
     public int V { get; init; } = BoardChannel.Version;
-    /// <summary>"selection", "show" or "summary".</summary>
+    /// <summary>"hello", "selection", "show", "summary" or "raise".</summary>
     public string Op { get; init; } = "";
     public string? Agent { get; init; }
     public string? Caption { get; init; }
     public IReadOnlyList<string>? Paths { get; init; }
     public string? Path { get; init; }
+    /// <summary>Bring what <c>show</c> points at into view: raise the window, zoom the map, open the reader.</summary>
+    public bool Reveal { get; init; }
     /// <summary>The agent's working folder, for relative paths.</summary>
     public string? Base { get; init; }
 }
@@ -29,77 +30,94 @@ public sealed class BoardReply
     public static BoardReply Failure(string error) => new() { Ok = false, Error = error };
 }
 
+/// <summary>A window's answer to "hello".</summary>
+/// <param name="Project">The project root on screen; null before a project is open.</param>
+/// <param name="IdleSeconds">Since the human last did something in the window.</param>
+public sealed record HelloReport(string? Project, string? Name, long IdleSeconds, bool Focused);
+
+/// <summary>A window found on the board channel.</summary>
+/// <param name="Note">Why the window cannot take part, such as another version.</param>
+public sealed record BoardWindow(string Pipe, string? Project, string? Name, long IdleSeconds, bool Focused, string? Note = null);
+
 /// <summary>
-/// The named pipe between a window and <c>floorplan mcp</c>: one JSON line each way per
-/// connection. Each window serves the pipe named after its project root, for the current user
-/// only, and only the first window on a project serves it. A client looks for a window on its
-/// working folder, then on each folder above it.
+/// The named pipes between windows and <c>floorplan mcp</c>: one JSON line each way per call.
+/// Every window serves its own pipe, for the current user only, and says which project it shows;
+/// an agent's server finds the windows by listing the pipes, so one server serves every project.
 /// </summary>
 public static class BoardChannel
 {
-    public const int Version = 1;
+    public const int Version = 2;
     const string Prefix = "floorplan-board-";
     const int MaxReplyBytes = 8 * 1024 * 1024;
     static readonly TimeSpan ExchangeTimeout = TimeSpan.FromSeconds(10);
 
-    public static string PipeName(string root)
-    {
-        var canonical = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)).ToLowerInvariant();
-        return Prefix + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)).AsSpan(0, 8));
-    }
+    public static string PipeName(int processId) => Prefix + processId.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>Pipe names for the folder and every folder above it, nearest first.</summary>
-    public static IEnumerable<string> Candidates(string folder)
+    /// <summary>The open windows, the one the human used last first.</summary>
+    public static async Task<IReadOnlyList<BoardWindow>> FindWindowsAsync(CancellationToken cancellationToken = default)
     {
-        for (var dir = new DirectoryInfo(Path.GetFullPath(folder)); dir is not null; dir = dir.Parent)
-            yield return PipeName(dir.FullName);
-    }
-
-    /// <summary>
-    /// Sends a request to the window showing the folder or a folder above it. Null when no
-    /// window is showing any of them.
-    /// </summary>
-    public static async Task<BoardReply?> RequestAsync(string folder, BoardRequest request, CancellationToken cancellationToken = default)
-    {
-        var existing = ExistingPipes();
-        foreach (var name in Candidates(folder))
+        var found = await Task.WhenAll(ListPipes().Select(async pipe =>
         {
-            // Without a listing, probe briefly; a listed pipe may be between connections.
-            if (existing is not null && !existing.Contains(name)) continue;
-            var client = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-            await using (client)
+            BoardReply? reply;
+            try
             {
-                try
-                {
-                    await client.ConnectAsync(existing is null ? 50 : 2000, cancellationToken);
-                }
-                catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
-                {
-                    continue;
-                }
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(ExchangeTimeout);
-                await WriteLineAsync(client, JsonSerializer.SerializeToUtf8Bytes(request, ScanJson.Options), timeout.Token);
-                var line = await ReadLineAsync(client, MaxReplyBytes, timeout.Token)
-                    ?? throw new IOException("The FloorPlan window closed the connection without replying");
-                return JsonSerializer.Deserialize<BoardReply>(line, ScanJson.Options)
-                    ?? throw new IOException("The FloorPlan window sent an empty reply");
+                reply = await RequestAsync(pipe, new BoardRequest { Op = "hello" }, cancellationToken, connectMilliseconds: 500);
             }
-        }
-        return null;
+            catch (Exception e) when ((e is IOException or JsonException or OperationCanceledException) && !cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+            if (reply is null) return null;
+            if (!reply.Ok || reply.Result is not { } result) return new BoardWindow(pipe, null, null, long.MaxValue, false, reply.Error);
+            var hello = result.Deserialize<HelloReport>(ScanJson.Options);
+            return hello is null ? null : new BoardWindow(pipe, hello.Project, hello.Name, hello.IdleSeconds, hello.Focused);
+        }));
+        return found.OfType<BoardWindow>()
+            .OrderByDescending(w => w.Focused)
+            .ThenBy(w => w.IdleSeconds)
+            .ThenBy(w => w.Pipe, StringComparer.Ordinal)
+            .ToList();
     }
 
-    /// <summary>Names of the named pipes that exist now, or null where they cannot be listed.</summary>
-    static HashSet<string>? ExistingPipes()
+    /// <summary>Sends a request to one window. Null when it cannot be reached.</summary>
+    public static async Task<BoardReply?> RequestAsync(string pipe, BoardRequest request, CancellationToken cancellationToken = default, int connectMilliseconds = 2000)
     {
-        if (!OperatingSystem.IsWindows()) return null;
+        var client = new NamedPipeClientStream(".", pipe, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        await using (client)
+        {
+            try
+            {
+                await client.ConnectAsync(connectMilliseconds, cancellationToken);
+            }
+            catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ExchangeTimeout);
+            await WriteLineAsync(client, JsonSerializer.SerializeToUtf8Bytes(request, ScanJson.Options), timeout.Token);
+            var line = await ReadLineAsync(client, MaxReplyBytes, timeout.Token)
+                ?? throw new IOException("The FloorPlan window closed the connection without replying");
+            return JsonSerializer.Deserialize<BoardReply>(line, ScanJson.Options)
+                ?? throw new IOException("The FloorPlan window sent an empty reply");
+        }
+    }
+
+    /// <summary>Board pipes that exist now. Listing pipes needs Windows, like the window itself.</summary>
+    static IReadOnlyList<string> ListPipes()
+    {
+        if (!OperatingSystem.IsWindows()) return [];
         try
         {
-            return Directory.GetFiles(@"\\.\pipe\").Select(Path.GetFileName).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return Directory.GetFiles(@"\\.\pipe\")
+                .Select(Path.GetFileName)
+                .OfType<string>()
+                .Where(n => n.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
+                .ToList();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            return null;
+            return [];
         }
     }
 
@@ -127,63 +145,52 @@ public static class BoardChannel
     }
 }
 
-/// <summary>
-/// A window's end of the board channel. Takes the pipe for its project if no other window has
-/// it, and keeps trying while another does, so the board follows whichever window stays open.
-/// Requests are handled one connection at a time by <paramref name="handler"/>.
-/// </summary>
+/// <summary>A window's end of the board channel: its own pipe, answered by <paramref name="handler"/>.</summary>
 public sealed class BoardServer : IAsyncDisposable
 {
     static readonly TimeSpan ExchangeTimeout = TimeSpan.FromSeconds(10);
     const int MaxRequestBytes = 256 * 1024;
 
-    readonly string name;
     readonly Func<BoardRequest, Task<BoardReply>> handler;
     readonly Action<string> log;
-    readonly TimeSpan retry;
     readonly CancellationTokenSource stop = new();
     readonly Task loop;
 
-    public BoardServer(string root, Func<BoardRequest, Task<BoardReply>> handler, Action<string> log)
-        : this(root, handler, log, TimeSpan.FromSeconds(5)) { }
-
-    internal BoardServer(string root, Func<BoardRequest, Task<BoardReply>> handler, Action<string> log, TimeSpan retry)
+    public BoardServer(string pipeName, Func<BoardRequest, Task<BoardReply>> handler, Action<string> log)
     {
-        name = BoardChannel.PipeName(root);
+        PipeName = pipeName;
         this.handler = handler;
         this.log = log;
-        this.retry = retry;
         loop = Task.Run(ListenAsync);
     }
 
-    public string PipeName => name;
+    public string PipeName { get; }
 
-    /// <summary>True while this window serves the project's pipe.</summary>
+    /// <summary>True once the pipe exists.</summary>
     public bool Serving { get; private set; }
 
-    NamedPipeServerStream Create(bool first) => new(
-        name,
+    NamedPipeServerStream Create() => new(
+        PipeName,
         PipeDirection.InOut,
         NamedPipeServerStream.MaxAllowedServerInstances,
         PipeTransmissionMode.Byte,
-        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly | (first ? PipeOptions.FirstPipeInstance : PipeOptions.None));
+        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
     async Task ListenAsync()
     {
         var token = stop.Token;
         NamedPipeServerStream? listener = null;
-        bool waitingLogged = false;
         int failures = 0;
         while (!token.IsCancellationRequested)
         {
             try
             {
-                listener ??= Create(first: !Serving);
+                listener ??= Create();
                 Serving = true;
                 await listener.WaitForConnectionAsync(token);
                 var connected = listener;
                 // Listen again before serving, so the pipe never disappears between clients.
-                listener = Create(first: false);
+                listener = Create();
                 failures = 0;
                 _ = ServeAsync(connected, token);
             }
@@ -195,20 +202,9 @@ public sealed class BoardServer : IAsyncDisposable
             {
                 listener?.Dispose();
                 listener = null;
-                TimeSpan pause;
-                if (!Serving)
-                {
-                    // Another window serves this project.
-                    if (!waitingLogged) log($"board: {name} is served by another window; retrying");
-                    waitingLogged = true;
-                    pause = retry;
-                }
-                else
-                {
-                    // A client that left mid-connection costs nothing; repeated failures back off.
-                    if (++failures == 3) log($"board: {name}: {e.Message}");
-                    pause = failures > 1 ? TimeSpan.FromMilliseconds(Math.Min(2000, 50 * failures)) : TimeSpan.Zero;
-                }
+                // A client that left mid-connection costs nothing; repeated failures back off.
+                if (++failures == 3) log($"board: {PipeName}: {e.Message}");
+                var pause = failures > 1 ? TimeSpan.FromMilliseconds(Math.Min(2000, 50 * failures)) : TimeSpan.Zero;
                 try { await Task.Delay(pause, token); } catch (OperationCanceledException) { break; }
             }
         }
@@ -231,7 +227,7 @@ public sealed class BoardServer : IAsyncDisposable
                 {
                     var request = JsonSerializer.Deserialize<BoardRequest>(line, ScanJson.Options);
                     reply = request is null ? BoardReply.Failure("Empty request")
-                        : request.V != BoardChannel.Version ? BoardReply.Failure($"This FloorPlan window speaks board version {BoardChannel.Version}, not {request.V}; restart one of them")
+                        : request.V != BoardChannel.Version ? BoardReply.Failure($"This FloorPlan window speaks board version {BoardChannel.Version}, not {request.V}; restart the older of the window and the agent's server")
                         : await handler(request);
                 }
                 catch (JsonException e)
