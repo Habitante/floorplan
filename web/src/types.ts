@@ -1,6 +1,6 @@
 // The scan contract produced by FloorPlan.Core (camelCase JSON). Absent numbers are unavailable, not zero.
 
-export type FileKind = 'code' | 'docs' | 'data' | 'asset' | 'other'
+export type FileKind = 'code' | 'test' | 'docs' | 'data' | 'asset' | 'other'
 export type EntryStatus = 'ok' | 'missing' | 'unreadable' | 'link' | 'repository'
 export type WorkingChange = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
 
@@ -20,6 +20,7 @@ export interface ScanNode {
   // Folders
   files?: number
   code?: number
+  tests?: number
   docs?: number
   data?: number
   unmeasured?: number
@@ -87,7 +88,7 @@ export interface BoardView {
     removed: boolean
   } | null
   area: 'lines' | 'bytes'
-  fill: 'activity' | 'kind'
+  fill: 'activity' | 'age' | 'kind'
   theme: 'light' | 'dark'
 }
 

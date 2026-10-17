@@ -57,7 +57,7 @@ public static class TreeBuilder
 
     static void Aggregate(TreeNode folder)
     {
-        long bytes = 0, code = 0, docs = 0, data = 0;
+        long bytes = 0, code = 0, tests = 0, docs = 0, data = 0;
         int files = 0, unmeasured = 0;
         DateTimeOffset? modified = null;
 
@@ -73,6 +73,7 @@ public static class TreeBuilder
                 switch (child.Kind)
                 {
                     case FileKind.Code: code += child.Lines ?? 0; break;
+                    case FileKind.Test: tests += child.Lines ?? 0; break;
                     case FileKind.Docs: docs += child.Lines ?? 0; break;
                     case FileKind.Data: data += child.Lines ?? 0; break;
                 }
@@ -83,6 +84,7 @@ public static class TreeBuilder
                 files += child.Files ?? 0;
                 bytes += child.Bytes ?? 0;
                 code += child.Code ?? 0;
+                tests += child.Tests ?? 0;
                 docs += child.Docs ?? 0;
                 data += child.Data ?? 0;
                 unmeasured += child.Unmeasured ?? 0;
@@ -93,6 +95,7 @@ public static class TreeBuilder
         folder.Files = files;
         folder.Bytes = bytes;
         folder.Code = code;
+        folder.Tests = tests;
         folder.Docs = docs;
         folder.Data = data;
         folder.Unmeasured = unmeasured;

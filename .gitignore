@@ -37,3 +37,6 @@ Thumbs.db
 
 # Raw discovery inputs (the original note, a design conversation): kept locally
 /docs/history/
+
+# Claude Code keeps each person's permissions here; .claude/launch.json is shared.
+.claude/settings.local.json

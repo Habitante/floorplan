@@ -3,13 +3,19 @@ import type { FileKind } from './types'
 /** Canvas colours, read from the CSS tokens so both themes stay defined in one place. */
 export interface Palette {
   surface: string
+  /** The map's background, showing in the gutters between folders. */
+  gutter: string
   ink: string
   ink2: string
   ink3: string
-  frames: [string, string]
-  zero: string
-  activity: string[]
+  /** Folder frames: regions one level below the focus, and deeper folders. */
+  region: string
+  folder: string
+  /** Steps of the warm ramp shared by activity and age; index 0 is the neutral zero. */
+  heat: string[]
   kind: Record<FileKind, string>
+  /** Dim tint of each kind, for what the activity and age lenses leave at zero. */
+  ground: Record<FileKind, string>
   /** Outline for uncommitted changes. */
   change: string
   /** Outline for agents' pointers. */
@@ -21,19 +27,24 @@ export function readPalette(ctx: CanvasRenderingContext2D): Palette {
   const style = getComputedStyle(document.documentElement)
   const v = (name: string) => style.getPropertyValue(name).trim()
   const zero = v('--zero')
-  const other = v('--kind-other')
+  const kinds = (prefix: string): Record<FileKind, string> => {
+    const other = v(`--${prefix}-other`)
+    return { code: v(`--${prefix}-code`), test: v(`--${prefix}-test`), docs: v(`--${prefix}-docs`), asset: v(`--${prefix}-asset`), data: other, other }
+  }
   return {
     surface: v('--surface'),
+    gutter: v('--gutter'),
     ink: v('--ink'),
     ink2: v('--ink-2'),
     ink3: v('--ink-3'),
-    frames: [v('--frame-a'), v('--frame-b')],
-    zero,
-    activity: [zero, v('--act-1'), v('--act-2'), v('--act-3'), v('--act-4'), v('--act-5')],
-    kind: { code: v('--kind-code'), docs: v('--kind-docs'), asset: v('--kind-asset'), data: other, other },
+    region: v('--frame-region'),
+    folder: v('--frame-folder'),
+    heat: [zero, v('--act-1'), v('--act-2'), v('--act-3'), v('--act-4'), v('--act-5')],
+    kind: kinds('kind'),
+    ground: kinds('ground'),
     change: v('--change'),
     pointer: v('--pointer'),
-    unsampled: hatch(ctx, zero, v('--frame-b')),
+    unsampled: hatch(ctx, zero, v('--hatch')),
   }
 }
 

@@ -41,6 +41,9 @@ public static class FileClassifier
         ["CHANGELOG"] = FileKind.Docs,
     };
 
+    static readonly HashSet<string> TestFolders = new(StringComparer.OrdinalIgnoreCase) { "test", "tests", "__tests__", "spec", "specs" };
+    static readonly string[] TestSuffixes = ["_test", ".test", "-test", "_spec", ".spec", "-spec"];
+
     /// <summary>Returns the kind implied by the name, or null when content must decide.</summary>
     public static FileKind? FromName(string path)
     {
@@ -48,11 +51,34 @@ public static class FileClassifier
         if (Names.TryGetValue(name, out var named)) return named;
         var extension = System.IO.Path.GetExtension(name);
         if (extension.Length == 0 && name.StartsWith('.')) extension = name;
-        return Extensions.TryGetValue(extension, out var kind) ? kind : null;
+        if (!Extensions.TryGetValue(extension, out var kind)) return null;
+        return kind == FileKind.Code && IsTestPath(path) ? FileKind.Test : kind;
+    }
+
+    /// <summary>
+    /// Whether common conventions mark a code file as a test: a folder named test, tests, __tests__, spec or specs,
+    /// or a name such as test_x.py, x_test.go, x.test.ts, x.spec.js, XTest.cs or XTests.cs.
+    /// </summary>
+    public static bool IsTestPath(string path)
+    {
+        var parts = path.Split('/');
+        for (int i = 0; i < parts.Length - 1; i++)
+            if (TestFolders.Contains(parts[i])) return true;
+        var stem = System.IO.Path.GetFileNameWithoutExtension(parts[^1]);
+        if (stem.Equals("test", StringComparison.OrdinalIgnoreCase) || stem.Equals("tests", StringComparison.OrdinalIgnoreCase) ||
+            stem.Equals("conftest", StringComparison.OrdinalIgnoreCase)) return true;
+        if (stem.StartsWith("test_", StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var suffix in TestSuffixes)
+            if (stem.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return true;
+        // PascalCase only, so that "latest" or "contest" do not count.
+        return stem.Length > 4 && (stem.EndsWith("Test", StringComparison.Ordinal) || stem.EndsWith("Tests", StringComparison.Ordinal));
     }
 
     /// <summary>Kinds whose physical lines are counted.</summary>
-    public static bool CountsLines(FileKind kind) => kind is FileKind.Code or FileKind.Docs or FileKind.Data;
+    public static bool CountsLines(FileKind kind) => kind is FileKind.Code or FileKind.Test or FileKind.Docs or FileKind.Data;
+
+    /// <summary>Kinds whose lines make up the Lines area: code, tests and documentation.</summary>
+    public static bool IsLinesArea(FileKind kind) => kind is FileKind.Code or FileKind.Test or FileKind.Docs;
 
     static Dictionary<string, FileKind> Build(Dictionary<FileKind, string[]> groups)
     {

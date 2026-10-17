@@ -102,7 +102,7 @@ export class HistoryController {
 
     const [from, to] = range.peek()
     const barWidth = this.width / slots
-    ctx.fillStyle = palette.frames[0]
+    ctx.fillStyle = palette.folder
     ctx.fillRect(from * barWidth, 0, (to - from) * barWidth, this.height)
 
     let maxFiles = 1
@@ -115,7 +115,7 @@ export class HistoryController {
       const c = commits[i]
       const h = 3 + (this.height - 7) * (Math.log2(1 + c.files.length + c.other) / scale)
       const inRange = i >= from && i < to
-      ctx.fillStyle = i === chosen || i === this.hover ? palette.ink : inRange ? palette.activity[3] : palette.ink3
+      ctx.fillStyle = i === chosen || i === this.hover ? palette.ink : inRange ? palette.heat[3] : palette.ink3
       ctx.globalAlpha = inRange || i === chosen || i === this.hover ? 1 : 0.45
       ctx.fillRect(i * barWidth + gap / 2, this.height - h, Math.max(0.6, barWidth - gap), h)
     }

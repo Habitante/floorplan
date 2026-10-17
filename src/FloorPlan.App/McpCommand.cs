@@ -18,13 +18,18 @@ static class McpCommand
     // What the human sees, so agents can talk about the map in its own terms.
     const string Instructions =
         "FloorPlan shows repositories as maps on the human's screen. A map is a treemap: one rectangle per file, nested in " +
-        "its folders, with folder names in header strips. Area is a file's lines in code and documentation (area: lines) or " +
-        "its size on disk (area: bytes). Fill shows activity or kind: with activity, orange marks commits in the human's " +
-        "history range, stronger with more (darker in the light theme, brighter in the dark one), and grey means none; with " +
-        "kind, blue is code, orange documentation, green assets, grey data and other files. Violet outlines mark uncommitted " +
-        "changes; raspberry outlines are agents' pointers, with their captions in the row under the map. The strip along the " +
-        "bottom is the commit history, and its highlighted range is what activity counts. The reader beside the map shows a " +
-        "file or a diff.\n\n" +
+        "its folders, with folder names in header strips; wider gutters and larger headers mark the top-level regions. Area " +
+        "is a file's lines in code, tests and documentation (area: lines) or its size on disk (area: bytes). Fill shows " +
+        "activity, age or kind. Activity and age share one warm ramp from red through orange to yellow, where more is " +
+        "brighter in the dark theme and darker in the light one: activity counts commits in the human's history range, and " +
+        "age is how recently a file was last committed, as of the range's end (strongest within a day, faintest within a " +
+        "year). Files with no commits in the range, or none within a year, keep a dim tint of their kind; under age, hatching " +
+        "marks a file whose last commit the loaded history cannot tell (it came later, was never committed, or is older than " +
+        "the history FloorPlan read). Replies give each file and folder's lastCommit, as age shows it. With kind, blue is " +
+        "code, teal tests, green assets, and documentation the grey that contrasts most with the background; data and other " +
+        "files are the muted grey. Violet outlines mark uncommitted changes; raspberry outlines are agents' pointers, with " +
+        "their captions in the row under the map. The strip along the bottom is the commit history, and its highlighted " +
+        "range is what activity and age count. The reader beside the map shows a file or a diff.\n\n" +
         "When the human says \"this\", \"here\" or \"these\", call get_selection. If it reports stale, the window has been " +
         "idle for a while: confirm what they mean. In a diff, line numbers count in the version named by lineNumbers and " +
         "removed lines have none; rely on selectedText. Instead of listing files in prose, call show (\"path:480-492\" points " +
@@ -62,8 +67,8 @@ static class McpCommand
                         Name = "get_selection",
                         Title = "What the human is looking at",
                         Description =
-                            "What the human has selected on a FloorPlan map: the file or folder (with its measurements, when it was " +
-                            "selected and, if HEAD moved since, the HEAD at that time), the file in the reader with the lines in view and " +
+                            "What the human has selected on a FloorPlan map: the file or folder (with its measurements and last commit, " +
+                            "when it was selected and, if HEAD moved since, the HEAD at that time), the file in the reader with the lines in view and " +
                             "any selected lines and text, the zoomed folder, the commit selected on the history strip, the history range, " +
                             "the last few selections, how long the window has been idle, and the other open windows. Use it to resolve " +
                             "\"this\" or \"here\".",
@@ -108,7 +113,7 @@ static class McpCommand
                         Title = "Size and activity of a folder",
                         Description =
                             "Footprint and activity of a folder or file from the model the human sees: files, lines (a folder's " +
-                            "codeAndDocLines; composition adds data), bytes, commits in the human's history range, uncommitted files, " +
+                            "codeAndDocLines; composition adds data), bytes, commits in the human's history range, the last commit, uncommitted files, " +
                             "the largest parts and recent commits. Without an open window it scans the project and counts the latest " +
                             "40 commits.",
                         ReadOnly = true,

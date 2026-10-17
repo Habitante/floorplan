@@ -1,6 +1,7 @@
 namespace FloorPlan.Core;
 
-public enum FileKind { Code, Docs, Data, Asset, Other }
+/// <summary>What a file is, from its name. <see cref="Test"/> is code that path conventions mark as tests.</summary>
+public enum FileKind { Code, Test, Docs, Data, Asset, Other }
 
 public enum EntryStatus
 {
@@ -73,6 +74,7 @@ public sealed class TreeNode
     // Folders
     public int? Files { get; set; }
     public long? Code { get; set; }
+    public long? Tests { get; set; }
     public long? Docs { get; set; }
     public long? Data { get; set; }
     /// <summary>Files whose size, or recognised line count, is unavailable.</summary>

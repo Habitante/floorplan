@@ -1,4 +1,4 @@
-/* Tokens. The activity ramp and kind slots are validated per theme (see DISCOVERY.md). */
+/* Tokens. Structure, ground, heat, kind and overlay colours are validated per theme (see DISCOVERY.md). */
 :root {
   color-scheme: light;
   --page: #f9f9f7;
@@ -8,18 +8,26 @@
   --ink-3: #898781;
   --line: #e1e0d9;
   --hover: rgba(11, 11, 11, 0.06);
-  --frame-a: #e6e5df;
-  --frame-b: #dbdad3;
-  --zero: #f0efec;
-  --act-1: #f0995b;
-  --act-2: #dd7b2b;
-  --act-3: #c16302;
-  --act-4: #9f5102;
-  --act-5: #7e3f02;
-  --kind-code: #2a78d6;
-  --kind-docs: #eb6834;
-  --kind-asset: #1baf7a;
-  --kind-other: #d8d7d0;
+  --gutter: #fcfcfb;
+  --frame-region: #d3d2d0;
+  --frame-folder: #dfdedb;
+  --zero: #e0dfdd;
+  --hatch: #d2d1ce;
+  --act-1: #ebd06b;
+  --act-2: #f0a93c;
+  --act-3: #e98420;
+  --act-4: #d05418;
+  --act-5: #a32e21;
+  --kind-code: #1a73d5;
+  --kind-test: #09a6ad;
+  --kind-docs: #3e4348;
+  --kind-asset: #2b9f4a;
+  --kind-other: #c8c7c5;
+  --ground-code: #daeafe;
+  --ground-test: #d0f1f3;
+  --ground-docs: #f1f0ee;
+  --ground-asset: #d8f1db;
+  --ground-other: #e0dfdd;
   --accent: #2a78d6;
   --change: #4a3aa7;
   --pointer: #c2257a;
@@ -47,20 +55,28 @@
     --ink-3: #898781;
     --line: #2c2c2a;
     --hover: rgba(255, 255, 255, 0.07);
-    --frame-a: #262624;
-    --frame-b: #30302d;
-    --zero: #383835;
-    --act-1: #925019;
-    --act-2: #b3621e;
-    --act-3: #d67523;
-    --act-4: #f68c36;
-    --act-5: #feb079;
-    --kind-code: #3987e5;
-    --kind-docs: #d95926;
-    --kind-asset: #199e70;
-    --kind-other: #4a4a46;
+    --gutter: #0e0e0d;
+    --frame-region: #1c1c1a;
+    --frame-folder: #252422;
+    --zero: #32312f;
+    --hatch: #464543;
+    --act-1: #bc4a3c;
+    --act-2: #df662f;
+    --act-3: #f28f29;
+    --act-4: #fcbf4d;
+    --act-5: #faed9e;
+    --kind-code: #468de5;
+    --kind-test: #16bbbc;
+    --kind-docs: #cbd2d9;
+    --kind-asset: #4ebc65;
+    --kind-other: #5c5b58;
+    --ground-code: #203855;
+    --ground-test: #104040;
+    --ground-docs: #3b3d40;
+    --ground-asset: #234027;
+    --ground-other: #32312f;
     --accent: #3987e5;
-    --change: #9085e9;
+    --change: #bda8fc;
     --pointer: #f566ab;
     --syn-keyword: #c792ea;
     --syn-string: #9ed39b;
@@ -87,20 +103,28 @@
   --ink-3: #898781;
   --line: #2c2c2a;
   --hover: rgba(255, 255, 255, 0.07);
-  --frame-a: #262624;
-  --frame-b: #30302d;
-  --zero: #383835;
-  --act-1: #925019;
-  --act-2: #b3621e;
-  --act-3: #d67523;
-  --act-4: #f68c36;
-  --act-5: #feb079;
-  --kind-code: #3987e5;
-  --kind-docs: #d95926;
-  --kind-asset: #199e70;
-  --kind-other: #4a4a46;
+  --gutter: #0e0e0d;
+  --frame-region: #1c1c1a;
+  --frame-folder: #252422;
+  --zero: #32312f;
+  --hatch: #464543;
+  --act-1: #bc4a3c;
+  --act-2: #df662f;
+  --act-3: #f28f29;
+  --act-4: #fcbf4d;
+  --act-5: #faed9e;
+  --kind-code: #468de5;
+  --kind-test: #16bbbc;
+  --kind-docs: #cbd2d9;
+  --kind-asset: #4ebc65;
+  --kind-other: #5c5b58;
+  --ground-code: #203855;
+  --ground-test: #104040;
+  --ground-docs: #3b3d40;
+  --ground-asset: #234027;
+  --ground-other: #32312f;
   --accent: #3987e5;
-  --change: #9085e9;
+  --change: #bda8fc;
   --pointer: #f566ab;
   --syn-keyword: #c792ea;
   --syn-string: #9ed39b;
@@ -303,7 +327,7 @@ button:focus-visible, canvas:focus-visible, [tabindex]:focus-visible {
 .legend { display: grid; grid-template-columns: 18px 1fr; gap: 5px 8px; align-items: center; }
 .swatch { width: 18px; height: 12px; border-radius: 2px; }
 .swatch.hatch {
-  background: repeating-linear-gradient(135deg, var(--zero), var(--zero) 3px, var(--frame-b) 3px, var(--frame-b) 5px);
+  background: repeating-linear-gradient(135deg, var(--zero), var(--zero) 3px, var(--hatch) 3px, var(--hatch) 5px);
 }
 
 /* Map */
@@ -560,5 +584,5 @@ button.row:hover { background: var(--hover); }
 .reader .cm-deletedChunk { background: var(--diff-del-line) !important; }
 .reader .cm-deletedText, .reader .cm-deletedChunk del { background: var(--diff-del-text) !important; text-decoration: none; }
 .reader .cm-deletedLineGutter { background: var(--diff-del-text) !important; }
-.reader .cm-collapsedLines { background: var(--frame-a); color: var(--ink-3); font: 12px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+.reader .cm-collapsedLines { background: var(--frame-folder); color: var(--ink-3); font: 12px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
 .reader .cm-pointed { background: color-mix(in srgb, var(--pointer) 14%, transparent); box-shadow: inset 3px 0 0 var(--pointer); }

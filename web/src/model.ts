@@ -13,7 +13,7 @@ export interface Node {
   readonly kind: FileKind | null
   /** Measured bytes; unavailable sizes contribute nothing. */
   readonly bytes: number
-  /** Physical lines in code and documentation files. */
+  /** Physical lines in code, test and documentation files. */
   readonly lines: number
   readonly files: number
 }
@@ -35,7 +35,10 @@ export interface Model {
 
 export type Footprint = 'lines' | 'bytes'
 
-export const KINDS: readonly FileKind[] = ['code', 'docs', 'data', 'asset', 'other']
+export const KINDS: readonly FileKind[] = ['code', 'test', 'docs', 'data', 'asset', 'other']
+
+/** Kinds whose lines make up the Lines area. */
+export const LINES_AREA: ReadonlySet<FileKind> = new Set(['code', 'test', 'docs'])
 
 export function buildModel(scan: Scan): Model {
   const nodes: Node[] = []
@@ -56,8 +59,8 @@ export function buildModel(scan: Scan): Model {
       kind: src.kind ?? null,
       bytes: src.bytes ?? 0,
       lines: isFile
-        ? src.kind === 'code' || src.kind === 'docs' ? src.lines ?? 0 : 0
-        : (src.code ?? 0) + (src.docs ?? 0),
+        ? src.kind && LINES_AREA.has(src.kind) ? src.lines ?? 0 : 0
+        : (src.code ?? 0) + (src.tests ?? 0) + (src.docs ?? 0),
       files: isFile ? 1 : src.files ?? 0,
     }
     nodes.push(node)
@@ -90,8 +93,8 @@ export function dominantKind(model: Model, node: Node, footprint: Footprint): Fi
   const table = footprint === 'lines' ? model.kindLines : model.kindBytes
   let best = KINDS.length - 1
   let bestWeight = -1
-  // Under the lines footprint only code and docs carry weight.
-  const candidates = footprint === 'lines' ? [0, 1] : [0, 1, 2, 3, 4]
+  // Under the lines footprint only code, tests and docs carry weight.
+  const candidates = footprint === 'lines' ? [0, 1, 2] : [0, 1, 2, 3, 4, 5]
   for (const k of candidates) {
     const w = table[node.index * KINDS.length + k]
     if (w > bestWeight) {

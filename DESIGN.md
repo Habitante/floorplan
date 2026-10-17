@@ -28,13 +28,13 @@ First case study: a private Godot game. Its retained legacy code and the convent
 
 ## Visual and interaction rules
 
-**The map is a deep treemap.** Nested down to individual files, as in SpaceSniffer: thousands of leaves, readable by size and colour before any label. Drill in and out with spatial continuity. Labels collapse with zoom instead of shrinking into noise. Tiny and zero-weight files stay reachable through drill-down or a list.
+**The map is a deep treemap.** Nested down to individual files, as in SpaceSniffer: thousands of leaves, readable by size and colour before any label. Drill in and out with spatial continuity. Labels collapse with zoom instead of shrinking into noise. Tiny and zero-weight files stay reachable through drill-down or a list. Structure is drawn without hue: gutters narrow with depth (6 px between regions, the folders one level below the focus; 3 px between subfolders; 1 px between files), regions get a taller label strip, and folder frames sit darker than the files on them.
 
-**Area and fill answer separate questions.** A footprint selector controls area: **Lines** (physical lines in code and documentation files) or **Bytes** (size on disk; the only footprint where data, scenes and assets take area). A lens controls fill: **Activity** or **Kind**. Switching lens keeps geometry, focus and selection. Changing footprint or receiving file changes may relayout; keep ordering deterministic and movement minimal.
+**Area and fill answer separate questions.** A footprint selector controls area: **Lines** (physical lines in code, test and documentation files) or **Bytes** (size on disk; the only footprint where data, scenes and assets take area). A lens controls fill: **Activity**, **Age** or **Kind**. Switching lens keeps geometry, focus and selection. Changing footprint or receiving file changes may relayout; keep ordering deterministic and movement minimal.
 
-**Fill colours are measured, not picked.** Activity uses discrete steps (0, 1, 2–3, 4–7, 8–15, 16+ commits) on one orange ramp per theme, validated for monotone lightness and contrast against each surface. Zero is a neutral, and a project without history is hatched, so unknown never looks like inactive. Kind uses three categorical hues (code, docs, assets), the most that stay distinguishable when any two can be neighbours; data and other files share a neutral.
+**Colour has a grammar, and its values are measured.** Warm means change: one ramp from red through orange to yellow serves Activity and Age and nothing else, brighter with more in the dark theme and darker with more in the light one. Hue says what a file is; lightness says how much. The selected lens owns the strong colours, and what a warm lens leaves at zero keeps a dim, low-chroma tint of its kind, like a basemap under a thematic layer: the map never turns uniformly grey, and a lit tile needs no legend. A project without history is hatched, so unknown never looks like inactive. Activity steps: 0, 1, 2–3, 4–7, 8–15, 16+ commits. Age steps: within a day, a week, 30 days, 90 days, a year, then older. A file without a commit up to the range's end is "older" only when the history was cut short, no loaded commit touches it, and the oldest loaded commit is more than a year before the range's end; otherwise its age is unknown (it came later, was never committed, or its last commit was not loaded) and it is hatched. Kind uses three hues and a neutral: code blue, tests teal, assets green, and documentation as the neutral that contrasts most with the background; data and other files share a muted neutral. Tests are code that common path conventions mark as tests (a `test`, `tests`, `__tests__`, `spec` or `specs` folder, or names such as `test_x.py`, `x_test.go`, `x.test.ts`, `XTests.cs`); their lines count in the Lines area. Overlays are outlines in hues no fill uses: violet for uncommitted changes, raspberry for agents' pointers, ink for the selection. Every value is checked per theme for monotone lightness, step separation and colour-vision separation ([DISCOVERY.md](DISCOVERY.md)).
 
-**Activity is a range on the history strip.** The strip along the bottom is a commit timeline. Dragging a range sets which commits the activity lens counts, so one control covers "this week", "since I was last here" and "the last commit". Default: the latest 40 commits. Selecting a commit keeps its files at full strength and dims the rest; drilling down reaches the diff.
+**Activity is a range on the history strip.** The strip along the bottom is a commit timeline. Dragging a range sets which commits the activity lens counts, so one control covers "this week", "since I was last here" and "the last commit". Default: the latest 40 commits. Age is measured at the range's end: from now while the range ends at the newest commit, otherwise from that commit, so moving the end shows how recently each file had changed at that point. Selecting a commit keeps its files at full strength and dims the rest; drilling down reaches the diff.
 
 **Other relationships get other drawings.** Treemap for containment and footprint, a graph for system relationships, directed schematics for execution and data flow. Views share entity identities and selection. Graph nodes carry a small cost marker rather than distorting the layout.
 
@@ -58,7 +58,7 @@ First case study: a private Godot game. Its retained legacy code and the convent
 | Git | The installed `git` executable. |
 | Persistence | Versioned JSON under `%LOCALAPPDATA%\FloorPlan`, which also holds WebView2's user data. No database. |
 | Build | `dotnet` for the core and executable; npm and Vite for the front end at build time only. |
-| Checks | xUnit with fixture repositories for core behaviour, Vitest for layout and activity, smoke checks of the real window. |
+| Checks | xUnit with fixture repositories for core behaviour, Vitest for layout, activity and board logic, smoke checks of the real window. |
 
 Web technology carries the text-heavy parts (code, diffs, documents, tooltips); C# keeps the core readable to the owner, fast and publishable as one file. Accepted costs: two languages and a message bridge, a Node toolchain at build time, Windows first, and an executable of tens of megabytes. A macOS/Linux build replaces only the window host. The alternatives considered are in [DISCOVERY.md](DISCOVERY.md#stack).
 
@@ -91,9 +91,9 @@ Use the reference projects under `ref/` for ideas or small algorithms, keeping l
 - Layout calculation is separate from drawing and interaction.
 
 ```text
-src/FloorPlan.Core/           Inventory, Git parsing, tree aggregation, scan model
-src/FloorPlan.App/            floorplan.exe: window host, bridge, scan and smoke modes
-web/                          Front end: canvas map, panels, layout and activity
+src/FloorPlan.Core/           Inventory, Git parsing, tree aggregation, scan model, the board's model and channel
+src/FloorPlan.App/            floorplan.exe: window host, bridge, MCP server, scan and smoke modes
+web/                          Front end: canvas map, panels, layout, activity and pointers
 tests/FloorPlan.Core.Tests/   Fixture repositories and behaviour checks
 examples/                     Example project descriptions (planned)
 ```
@@ -134,22 +134,22 @@ Documentation signals:
 
 `floorplan.exe mcp [folder]` is a stdio MCP server that the agent launches; one registration serves every project. Each window serves its own named pipe (current user only, one JSON line each way per call) and says which project it shows, so the server finds the open windows by listing the pipes. A call goes to the project it names (a folder name such as `my-game`, or a path), else to the project an absolute path points into, else to the window the human used last: agents often work in one folder while talking about another. Every reply names its project. The folder is where the agent works: the base of its relative paths and the default for `summary` and `open` when no window is involved. Tools:
 
-- `get_selection(project?)`: what the human is looking at, so "this" has a referent. The selected file or folder with its measurements, when it was selected and, if HEAD has moved since, the HEAD at that time; the file in the reader with the lines in view, the selected lines and the selected text; the zoomed folder, the selected commit and the history range; the last five selections; how long the window has been idle, with `stale` after ten minutes; and the other open windows. In a diff, line numbers count in the newer version, named in the reply, and removed lines have none, so the selected text is what settles a selection. The human selects, then types, and by the time the agent asks the selection may have moved.
+- `get_selection(project?)`: what the human is looking at, so "this" has a referent. The selected file or folder with its measurements and last commit, when it was selected and, if HEAD has moved since, the HEAD at that time; the file in the reader with the lines in view, the selected lines and the selected text; the zoomed folder, the selected commit and the history range; the last five selections; how long the window has been idle, with `stale` after ten minutes; and the other open windows. In a diff, line numbers count in the newer version, named in the reply, and removed lines have none, so the selected text is what settles a selection. The human selects, then types, and by the time the agent asks the selection may have moved.
 - `show(paths, caption, agent?, project?, reveal?)`: outlines files and folders on the map with a short caption instead of paragraphs of prose; `path:480-492` points at lines, which the reader highlights. One pointer per agent, named by the agent or after its MCP client, stays until the agent points again or the human dismisses it; every window on the project draws it and the reply counts them. Paths resolve against the scan (absolute, or relative to the root or the agent's folder). A path that exists but is not on the map (ignored by Git, untracked) outlines its nearest folder on the map and is reported with its reason; a path that does not exist is reported as unknown. `reveal` also raises the window, shows the paths on the map and opens the reader at the lines, for when the human asked to be shown. Without a window, `show` reports that nobody is looking, so the agent falls back to prose. At the end of a task, pointing at the files it changed is the agent's visual handoff.
-- `summary(path?, project?)`: footprint, composition and activity of a folder or file from the model the human sees, counted over the human's history range; without a window, from a fresh read-only scan over the latest 40 commits. A folder's line total is `codeAndDocLines`, the Lines area; its composition adds data.
+- `summary(path?, project?)`: footprint, composition and activity of a folder or file from the model the human sees, counted over the human's history range; without a window, from a fresh read-only scan over the latest 40 commits. A folder's line total is `codeAndDocLines`, the Lines area; its composition adds data. File and folder replies carry `lastCommit`, measured as the Age lens measures it, so agents can talk about what the human sees under Age.
 - `open(project?)`: raises the window showing a project, or starts one and waits until it has scanned. Neither takes the keyboard from the human, and a started window outlives the agent's session. Only for when the human wants to see something.
 
 The server's instructions describe the map as the human sees it (area, fill, colours, outlines, where captions sit), so agents can talk about it in its own terms, and say how to treat stale selections, diffs and project choice. The view reports its theme.
 
-Pointers are raspberry outlines with a hairline of the surface colour inside, validated in both themes against the activity ramp, the kind hues and the uncommitted violet. Captions sit in the row under the map. Per-agent colours wait until two agents point at once in practice; a history of pointers waits for a need.
+Pointers are raspberry outlines with a hairline of the surface colour inside, checked in both themes against the warm ramp, the kind hues and tints, and the uncommitted violet. Captions sit in the row under the map. Per-agent colours wait until two agents point at once in practice; a history of pointers waits for a need.
 
-The agent registers the server once, for example `claude mcp add --scope user floorplan -- <path>loorplan.exe mcp`. User and local scopes keep the entry in the user's own configuration; project scope would write `.mcp.json` into the inspected repository.
+The agent registers the server once, for example `claude mcp add --scope user floorplan -- <path>\floorplan.exe mcp`. User and local scopes keep the entry in the user's own configuration; project scope would write `.mcp.json` into the inspected repository.
 
 Later, `propose(overlay)` adds a proposed change as outlined regions and edges, distinct from current code. After implementation the resulting diff lands in the same place.
 
 ## Milestones
 
-Built in this order. Sizes are rough: S is about a session, M a couple, L several. [README.md](README.md) records what is done.
+Built in this order, with one open question: whether 4 comes before 3. A path-only description of the case study, drawn on the map, settles it ([DISCOVERY.md](DISCOVERY.md)). Sizes are rough: S is about a session, M a couple, L several. [README.md](README.md) records what is done.
 
 | Step | Content | Size |
 |---|---|---|
@@ -157,16 +157,16 @@ Built in this order. Sizes are rough: S is about a session, M a couple, L severa
 | 1a | Live refresh; uncommitted changes outlined on the map and shown as a pending entry on the history strip | S |
 | 1b | Reader pane: read-only source view with syntax colouring (CodeMirror), commit and working-change diffs; opens on click | M |
 | 1c | Remembered zoom and range per project; optional untracked scope | S |
-| 1d | Polish: legibility and style | S |
+| 1d | Visual tweaks from the owner's use, collected as they come | S |
 | 2 | Shared pointer (MCP) | S–M |
 | 3 | Inside files: skeletons and symbols | M–L |
 | 4 | Meaning connected to files | L |
 | 5 | Proposals | M |
 | — | Before a first release: automated build, release executable | S |
 
-### 1. Real repository map (in progress)
+### 1. Real repository map
 
-`floorplan.exe` opens a folder and draws the deep treemap of its actual files: lines or bytes as area, activity or kind as fill, the history strip with range selection, and an inspector for files, commits and diffs. `floorplan.exe scan` emits the same model as JSON. Includes refresh when files change, remembered project and view state, clear scan status, and graceful handling of plain folders and a missing Git executable.
+`floorplan.exe` opens a folder and draws the deep treemap of its actual files: lines or bytes as area, activity, age or kind as fill, the history strip with range selection, and an inspector for files, commits and diffs. `floorplan.exe scan` emits the same model as JSON. Includes refresh when files change, remembered project and view state, clear scan status, and graceful handling of plain folders and a missing Git executable.
 
 Clicking a file reads it: the reader takes the side panel's place at the same width (drag the edge to resize), so the map never reflows. Within a selected commit or the uncommitted changes, clicking a file reads its diff.
 
@@ -180,7 +180,7 @@ Acceptance:
 
 ### 2. Shared pointer
 
-`floorplan.exe mcp` with `get_selection`, `show` and `summary`, registered with Claude Code for the case study.
+`floorplan.exe mcp` with `get_selection`, `show`, `summary` and `open`, registered once with Claude Code for every project.
 
 Acceptance: in a Claude Code session on the case study, the human selects a region and asks about "this", and the agent identifies it correctly. The agent highlights the files a planned change would touch, and the human sees them on the map.
 

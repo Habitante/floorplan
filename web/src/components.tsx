@@ -1,6 +1,6 @@
 import { useSignal } from '@preact/signals'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { ACTIVITY_STEP_LABELS } from './activity'
+import { ACTIVITY_STEP_LABELS, AGE_STEP_LABELS } from './activity'
 import { describeItem, pointedNodes } from './board'
 import { dismissPointer, goTo } from './board-controller'
 import { send } from './bridge'
@@ -8,14 +8,14 @@ import * as format from './format'
 import { HistoryController } from './history-controller'
 import { Icon } from './icons'
 import { MapController } from './map-controller'
-import { ancestry, contains, displayName, KINDS, weightOf, type Model, type Node } from './model'
+import { ancestry, contains, displayName, KINDS, LINES_AREA, weightOf, type Model, type Node } from './model'
 import { price, type PriceTag } from './render'
 import {
-  activity, focus, footprint, lens, model, openReader, pointers, range, reader, reveal, selected, selectedCommit, status, zoomTo,
+  activity, age, focus, footprint, lens, model, openReader, pointers, range, reader, reveal, selected, selectedCommit, status, zoomTo,
 } from './state'
 import type { FileKind, WorkingChange } from './types'
 
-const KIND_LABEL: Record<FileKind, string> = { code: 'Code', docs: 'Docs', data: 'Data', asset: 'Assets', other: 'Other' }
+const KIND_LABEL: Record<FileKind, string> = { code: 'Code', test: 'Tests', docs: 'Docs', data: 'Data', asset: 'Assets', other: 'Other' }
 
 export function App() {
   const m = model.value
@@ -68,7 +68,7 @@ function TopBar() {
           <Segmented
             label="Fill"
             value={lens.value}
-            options={[['activity', 'Activity'], ['kind', 'Kind']]}
+            options={[['activity', 'Activity'], ['age', 'Age'], ['kind', 'Kind']]}
             onChange={v => (lens.value = v)}
           />
           <button class={s.refreshing ? 'icon-button busy' : 'icon-button'} title="Rescan (F5)" aria-label="Rescan" onClick={() => send({ type: 'rescan' })}>
@@ -169,29 +169,38 @@ function InfoPanel({ model: m, close }: { model: Model; close: () => void }) {
   return (
     <div class="popover" ref={panel} role="dialog" aria-label="Map information">
       <h3>Area</h3>
-      <p><Icon name="lines" /> <b>Lines</b>: physical lines in code and documentation files, blank lines and comments included.</p>
+      <p><Icon name="lines" /> <b>Lines</b>: physical lines in code, test and documentation files, blank lines and comments included.</p>
       <p><b>Bytes</b>: size on disk. Data, scenes and binary files only take area here.</p>
       <h3>Fill</h3>
-      {lens.value === 'activity' ? (
-        p.git ? (
-          <>
-            <p>Commits in the selected history range touching each file or folder. A commit counts once per folder.</p>
-            <div class="legend">
-              {ACTIVITY_STEP_LABELS.map((label, i) => (
-                <>{swatch(i === 0 ? '--zero' : `--act-${i}`)}<span>{label}</span></>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div class="legend"><span class="swatch hatch" /><span>No Git history</span></div>
-        )
+      {lens.value === 'kind' ? (
+        <>
+          <div class="legend">
+            {swatch('--kind-code')}<span>Code</span>
+            {swatch('--kind-test')}<span>Tests</span>
+            {swatch('--kind-docs')}<span>Docs</span>
+            {swatch('--kind-asset')}<span>Assets</span>
+            {swatch('--kind-other')}<span>Data and other</span>
+          </div>
+          <p>Tests: code in a test, tests, __tests__, spec or specs folder, or named like test_x, x_test, x.test, x.spec or XTests.</p>
+        </>
+      ) : p.git ? (
+        <>
+          {lens.value === 'activity'
+            ? <p>Commits in the selected history range touching each file or folder. A commit counts once per folder.</p>
+            : <p>Time since the last commit touching each file or folder, as of the end of the selected range. Within:</p>}
+          <div class="legend">
+            {(lens.value === 'activity' ? ACTIVITY_STEP_LABELS : AGE_STEP_LABELS).map((label, i) => (
+              <>{swatch(i === 0 ? '--zero' : `--act-${i}`)}<span>{label}</span></>
+            ))}
+            {lens.value === 'age' && <><span class="swatch hatch" /><span>Unknown</span></>}
+          </div>
+          <p>Files at zero keep a dim tint of their kind.</p>
+          {lens.value === 'age' && (
+            <p>Unknown: no commit loaded up to the range's end, because the file came later, was never committed or is older than the loaded history.</p>
+          )}
+        </>
       ) : (
-        <div class="legend">
-          {swatch('--kind-code')}<span>Code</span>
-          {swatch('--kind-docs')}<span>Docs</span>
-          {swatch('--kind-asset')}<span>Assets</span>
-          {swatch('--kind-other')}<span>Data and other</span>
-        </div>
+        <div class="legend"><span class="swatch hatch" /><span>No Git history</span></div>
       )}
       <h3>Scan</h3>
       <p>
@@ -381,6 +390,9 @@ function NodePanel({ model: m, node }: { model: Model; node: Node }) {
   const src = node.src
   const [from, to] = range.value
   const modified = src.modified ? new Date(src.modified) : null
+  // The age lens measures the last commit, so the inspector shows that instead of the file date.
+  const last = lens.value === 'age' ? age.value?.times[node.index] ?? 0 : 0
+  const lastCommit = last > 0 ? format.fromUnix(last) : null
 
   const commits: number[] = []
   if (counts && counts[node.index] > 0) {
@@ -415,11 +427,13 @@ function NodePanel({ model: m, node }: { model: Model; node: Node }) {
 
       <div class="price num">
         {!node.isFile && <span><Icon name="file" label="Files" />{format.int(node.files)}</span>}
-        {(node.lines > 0 || src.kind === 'code' || src.kind === 'docs') && <Tag tag={{ lines: true, text: format.int(node.lines) }} />}
+        {(node.lines > 0 || (src.kind && LINES_AREA.has(src.kind))) && <Tag tag={{ lines: true, text: format.int(node.lines) }} />}
         {src.kind === 'data' && src.lines !== undefined && <Tag tag={{ lines: true, text: format.int(src.lines) }} />}
         {src.bytes !== undefined && <span>{format.bytes(node.bytes)}</span>}
         {m.scan.project.git && counts && <span><Icon name="commit" label="Commits in range" />{format.int(counts[node.index])}</span>}
-        {modified && <span title={format.dateLong(modified)}><Icon name="clock" label="Modified" />{format.ago(modified)}</span>}
+        {lastCommit
+          ? <span title={format.dateLong(lastCommit)}><Icon name="clock" label="Last commit" />{format.ago(lastCommit)}</span>
+          : modified && <span title={format.dateLong(modified)}><Icon name="clock" label="Modified" />{format.ago(modified)}</span>}
       </div>
       {src.note && <div class="note">{src.note}</div>}
       {src.change && <div class="note change"><Icon name="change" /> {CHANGE_LABEL[src.change]}</div>}

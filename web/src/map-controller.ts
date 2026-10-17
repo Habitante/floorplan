@@ -4,12 +4,12 @@ import { send } from './bridge'
 import * as format from './format'
 import { GLYPHS, iconFontsLoaded, type IconName } from './glyphs'
 import { hitTest, layoutTree, type Item } from './layout'
-import { contains, displayName, weightOf, type Footprint, type Model, type Node } from './model'
+import { contains, displayName, LINES_AREA, weightOf, type Footprint, type Model, type Node } from './model'
 import { readPalette, type Palette } from './palette'
 import { drawScene, IDENTITY, type View } from './render'
 import type { Rect } from './squarify'
 import {
-  activity, focus, footprint, hovered, lens, model, openReader, pointers, reader, selected, selectedCommit, touched, zoomTo,
+  activity, age, focus, footprint, hovered, lens, model, openReader, pointers, reader, selected, selectedCommit, touched, zoomTo,
 } from './state'
 
 const ANIMATION_MS = 260
@@ -61,6 +61,7 @@ export class MapController {
     this.cleanup.push(effect(() => this.relayout(model.value, focus.value, footprint.value)))
     this.cleanup.push(effect(() => {
       void lens.value, activity.value, hovered.value, selected.value, touched.value, pointers.value, iconFontsLoaded.value
+      if (lens.value === 'age') void age.value
       this.request()
     }))
 
@@ -167,6 +168,7 @@ export class MapController {
       lens: lens.peek(),
       footprint: footprint.peek(),
       activity: activity.peek(),
+      age: lens.peek() === 'age' ? age.peek() : null,
       hover: hovered.peek(),
       selected: selected.peek(),
       touched: touched.peek(),
@@ -246,10 +248,12 @@ export class MapController {
     const parts: (string | [IconName, string])[] = []
     if (!node.isFile) parts.push(['file', format.int(node.files)])
     const src = node.src
-    if (node.lines > 0 || src.kind === 'code' || src.kind === 'docs') parts.push(['lines', format.int(node.lines)])
+    if (node.lines > 0 || (src.kind && LINES_AREA.has(src.kind))) parts.push(['lines', format.int(node.lines)])
     if (src.lines !== undefined && src.kind === 'data') parts.push(['lines', format.int(src.lines)])
     if (src.bytes !== undefined) parts.push(format.bytes(node.bytes))
     if (m.scan.project.git && counts) parts.push(['commit', format.int(counts[node.index])])
+    const last = lens.peek() === 'age' ? age.peek()?.times[node.index] ?? 0 : 0
+    if (last > 0) parts.push(['clock', format.ago(format.fromUnix(last))])
     if (node.isFile && src.kind) parts.push(src.kind)
 
     const path = node === m.root ? displayName(m, node) : node.path + (node.isFile ? '' : '/')

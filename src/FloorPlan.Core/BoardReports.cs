@@ -4,8 +4,8 @@ using System.Text.Json;
 namespace FloorPlan.Core;
 
 // What agents receive from the board tools, serialised with ScanJson.Options. A file's "lines" are
-// its physical lines; a folder's "codeAndDocLines" are those of its code and documentation files,
-// the Lines area on the map.
+// its physical lines; a folder's "codeAndDocLines" are those of its code (tests included) and
+// documentation files, the Lines area on the map.
 
 public sealed record RangeReport
 {
@@ -25,10 +25,15 @@ public sealed record NodeReport
     public int? Files { get; init; }
     /// <summary>A file's physical lines.</summary>
     public long? Lines { get; init; }
-    /// <summary>A folder's lines in code and documentation files.</summary>
+    /// <summary>A folder's lines in code (tests included) and documentation files.</summary>
     public long? CodeAndDocLines { get; init; }
     public long? Bytes { get; init; }
     public int? CommitsInRange { get; init; }
+    /// <summary>
+    /// When it last changed, as of the end of the human's history range, as the age lens shows it.
+    /// Absent when no loaded commit up to then touches it.
+    /// </summary>
+    public string? LastCommit { get; init; }
     /// <summary>A file's uncommitted change.</summary>
     public string? Uncommitted { get; init; }
     /// <summary>Files with uncommitted changes inside a folder.</summary>
@@ -105,7 +110,7 @@ public sealed record SummaryReport
     public int Files { get; init; }
     /// <summary>A file's physical lines.</summary>
     public long? Lines { get; init; }
-    /// <summary>A folder's lines in code and documentation files; <see cref="Composition"/> adds data.</summary>
+    /// <summary>A folder's lines in code (tests included) and documentation files; <see cref="Composition"/> adds data.</summary>
     public long? CodeAndDocLines { get; init; }
     public long? Bytes { get; init; }
     public int? Unmeasured { get; init; }
@@ -113,6 +118,8 @@ public sealed record SummaryReport
     public IReadOnlyDictionary<string, KindReport>? Composition { get; init; }
     public RangeReport? Range { get; init; }
     public int? CommitsInRange { get; init; }
+    /// <summary>When it last changed, as of the end of the history range; absent when no loaded commit up to then touches it.</summary>
+    public string? LastCommit { get; init; }
     public IReadOnlyList<string>? Uncommitted { get; init; }
     public int? UncommittedNotListed { get; init; }
     public IReadOnlyList<NodeReport>? Largest { get; init; }
@@ -166,9 +173,10 @@ public static class BoardReports
             Kind = node.Kind is { } kind ? Name(kind) : null,
             Files = node.IsFile ? null : node.Files,
             Lines = node.IsFile ? node.Lines : null,
-            CodeAndDocLines = node.IsFile ? null : (node.Code ?? 0) + (node.Docs ?? 0),
+            CodeAndDocLines = node.IsFile ? null : (node.Code ?? 0) + (node.Tests ?? 0) + (node.Docs ?? 0),
             Bytes = node.Bytes,
             CommitsInRange = window?.Count(node),
+            LastCommit = window?.LastCommit(node) is { } last ? Date(last.Time) : null,
             Uncommitted = node.Change is { } change ? Name(change) : null,
             UncommittedFiles = changed > 0 ? changed : null,
             Note = node.Note,
@@ -275,7 +283,7 @@ public static class BoardReports
         {
             Func<TreeNode, long> weight = area == "bytes"
                 ? n => n.Bytes ?? 0
-                : n => n.IsFile ? (n.Kind is FileKind.Code or FileKind.Docs ? n.Lines ?? 0 : 0) : (n.Code ?? 0) + (n.Docs ?? 0);
+                : n => n.IsFile ? (n.Kind is { } k && FileClassifier.IsLinesArea(k) ? n.Lines ?? 0 : 0) : (n.Code ?? 0) + (n.Tests ?? 0) + (n.Docs ?? 0);
             largest = (node.Children ?? [])
                 .Where(c => weight(c) > 0)
                 .OrderByDescending(weight)
@@ -319,6 +327,7 @@ public static class BoardReports
             Composition = node.IsFile ? null : composition,
             Range = window?.Report(),
             CommitsInRange = inRange,
+            LastCommit = window?.LastCommit(node) is { } last ? Date(last.Time) : null,
             Uncommitted = changed.Count > 0 ? changed.Take(UncommittedLimit).ToList() : null,
             UncommittedNotListed = changed.Count > UncommittedLimit ? changed.Count - UncommittedLimit : null,
             Largest = largest is { Count: > 0 } ? largest : null,

@@ -116,6 +116,23 @@ public class BoardTests
     }
 
     [Fact]
+    public async Task Counts_tests_as_their_own_kind_inside_the_lines_area()
+    {
+        using var repo = new TempRepo()
+            .Write("scenes/world.gd", "1\n2\n").Write("scenes/world_test.gd", "1\n2\n3\n").Write("scenes/world.tscn", "[node]\n")
+            .Commit("Start");
+        var index = new ProjectIndex(await Scanner.ScanAsync(repo.Root));
+
+        var report = BoardReports.Summary(index, index.Get("scenes")!, CommitWindow.For(index.Scan, null), "lines", fromWindow: true);
+
+        Assert.Equal(5, report.CodeAndDocLines);
+        Assert.Equal(3, report.Composition!["test"].Lines);
+        Assert.Equal(2, report.Composition["code"].Lines);
+        Assert.Equal(["scenes/world_test.gd", "scenes/world.gd"], report.Largest!.Select(n => n.Path));
+        Assert.Equal("test", report.Largest![0].Kind);
+    }
+
+    [Fact]
     public async Task Counts_activity_over_the_humans_range()
     {
         using var repo = History();
@@ -135,6 +152,27 @@ public class BoardTests
         var stale = CommitWindow.For(scan, new BoardRange("0000000", "1111111", 2, Latest: false));
         Assert.True(stale.Latest);
         Assert.Equal(4, stale.Commits.Count);
+    }
+
+    [Fact]
+    public async Task Says_when_a_node_last_changed_as_of_the_ranges_end()
+    {
+        using var repo = History();
+        var scan = await Scanner.ScanAsync(repo.Root);
+        var index = new ProjectIndex(scan);
+        string Sha(string subject) => scan.Commits.Single(c => c.Subject == subject).Sha;
+        var latest = CommitWindow.For(scan, null);
+        var middle = CommitWindow.For(scan, new BoardRange(Sha("Grow the world"), Sha("Plan"), 2, Latest: false));
+        TreeNode world = index.Get("scenes/world.gd")!, scene = index.Get("scenes/world.tscn")!, holding = index.Get("scenes/holding.gd")!;
+
+        Assert.Equal("Hold", latest.LastCommit(world)?.Subject);
+        Assert.Equal("Grow the world", middle.LastCommit(world)?.Subject);
+        Assert.Equal("Start", middle.LastCommit(scene)?.Subject);      // before the range's start, as the age lens counts
+        Assert.Null(middle.LastCommit(holding));                        // only came after the range's end
+        Assert.Equal(BoardReports.Date(latest.LastCommit(world)!.Time), BoardReports.Node(world, latest).LastCommit);
+        Assert.Null(BoardReports.Node(holding, middle).LastCommit);
+        var scenes = index.Get("scenes")!;
+        Assert.Equal(BoardReports.Date(latest.LastCommit(scenes)!.Time), BoardReports.Summary(index, scenes, latest, "lines", fromWindow: true).LastCommit);
     }
 
     [Fact]

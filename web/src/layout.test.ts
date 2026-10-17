@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { countActivity, markCommit, markNodes } from './activity'
-import { layoutTree, hitTest, nearestItem } from './layout'
-import { buildModel, weightOf } from './model'
+import { ages, ageStep, countActivity, lastCommitTimes, markCommit, markNodes, nodeAgeStep, UNKNOWN_AGE } from './activity'
+import { HEADER, layoutTree, hitTest, nearestItem, REGION_HEADER, type Item } from './layout'
+import { buildModel, dominantKind, weightOf } from './model'
+import type { Palette } from './palette'
+import { fillFor, type Scene } from './render'
 import { squarify, type Rect } from './squarify'
 import type { Scan, ScanNode } from './types'
 
@@ -78,6 +80,32 @@ describe('layoutTree', () => {
     expect(nearestItem(items, model.byPath.get('readme.md')!)?.node).toBe(model.root)
   })
 
+  it('separates regions with wider gutters than files and gives them taller headers', () => {
+    const at = (path: string) => items.find(i => i.node.path === path)!
+    const [a, b] = [at('a'), at('b')]
+    const between = (p: Item, q: Item) => Math.max(q.x - (p.x + p.w), p.x - (q.x + q.w), q.y - (p.y + p.h), p.y - (q.y + q.h))
+    expect(between(a, b)).toBeCloseTo(6, 6)
+    expect(between(at('a/x.gd'), at('a/y.gd'))).toBeCloseTo(1, 6)
+    expect(a.header).toBe(REGION_HEADER)
+
+    // Depth counts from the focus: zoomed into a/, its files are the regions.
+    const zoomed = layoutTree(model.byPath.get('a')!, { x: 0, y: 0, w: 800, h: 600 }, weightOf('lines'))
+    const z = (path: string) => zoomed.find(i => i.node.path === path)!
+    expect(between(z('a/x.gd'), z('a/y.gd'))).toBeCloseTo(6, 6)
+  })
+
+  it('gives deeper folders the standard header', () => {
+    const deep: ScanNode = {
+      name: 'p', path: '', files: 2, code: 200, children: [
+        { name: 'a', path: 'a', files: 2, code: 200, children: [
+          { name: 'b', path: 'a/b', files: 2, code: 200, children: [file('a/b/x.gd', 0, 150), file('a/b/y.gd', 1, 50)] },
+        ] },
+      ],
+    }
+    const laid = layoutTree(buildModel(scanOf(deep)).root, { x: 0, y: 0, w: 800, h: 600 }, weightOf('lines'))
+    expect(laid.find(i => i.node.path === 'a/b')!.header).toBe(HEADER)
+  })
+
   it('leaves folders without room for their children closed', () => {
     const small = layoutTree(model.root, { x: 0, y: 0, w: 4, h: 3 }, weightOf('lines'))
     expect(small.filter(i => i.depth === 1).map(i => [i.node.path, i.open])).toEqual([['a', false], ['b', false]])
@@ -131,5 +159,103 @@ describe('working changes', () => {
   it('marks changed files and their folders', () => {
     const marks = markNodes(model, model.changed)
     expect(model.nodes.filter(n => marks[n.index]).map(n => n.path).sort()).toEqual(['', 'a', 'a/x.gd', 'readme.md'])
+  })
+})
+
+describe('age', () => {
+  const DAY = 86_400
+  const commits: Scan['commits'] = [
+    { sha: 'c3', time: 30 * DAY, author: 't', subject: 'x and y', files: [0, 1], other: 0 },
+    { sha: 'c2', time: 20 * DAY, author: 't', subject: 'z', files: [2], other: 0 },
+    { sha: 'c1', time: 10 * DAY, author: 't', subject: 'x', files: [0], other: 0 },
+  ]
+  const model = buildModel(scanOf(tree, commits))
+  const last = (path: string, to = 3) => lastCommitTimes(model, to)[model.byPath.get(path)!.index]
+  /** The same project with its history cut short at c1, and readme.md added but never committed. */
+  const cut = (() => {
+    const scan = scanOf({ ...tree, children: [...tree.children!.slice(0, 2), { ...file('readme.md', 3, 0), change: 'added' }] }, commits)
+    scan.project.historyComplete = false
+    return buildModel(scan)
+  })()
+  const step = (m: typeof model, path: string, to: number, asOf: number) => nodeAgeStep(ages(m, to, asOf), m.byPath.get(path)!)
+
+  it('tells a file older than a year from one whose age the history cannot tell', () => {
+    // A complete history, measured at c1: y.gd only came in c3, and readme.md was never committed.
+    expect(step(model, 'a/x.gd', 1, 10 * DAY)).toBe(5)
+    expect(step(model, 'a/y.gd', 1, 10 * DAY)).toBe(UNKNOWN_AGE)
+    expect(step(model, 'readme.md', 3, 30 * DAY)).toBe(UNKNOWN_AGE)
+    // Cut short more than a year before the range's end: what no loaded commit touches is older.
+    expect(step(cut, 'b/z.gd', 3, 400 * DAY)).toBe(0)
+    expect(step(cut, 'a', 3, 400 * DAY)).toBe(0)
+    // ...but not what comes later, and not what was never committed.
+    expect(step(cut, 'a/y.gd', 1, 400 * DAY)).toBe(UNKNOWN_AGE)
+    expect(step(cut, 'readme.md', 3, 400 * DAY)).toBe(UNKNOWN_AGE)
+    // Cut short less than a year back: an untouched file may be younger than a year.
+    expect(step(cut, 'a/y.gd', 1, 100 * DAY)).toBe(UNKNOWN_AGE)
+  })
+
+  it('takes each node’s newest commit up to the end of the range', () => {
+    expect(last('a/x.gd')).toBe(30 * DAY)
+    expect(last('b/z.gd')).toBe(20 * DAY)
+    expect(last('')).toBe(30 * DAY)
+    expect(last('a/x.gd', 1)).toBe(10 * DAY) // only c1
+    expect(last('a/y.gd', 1)).toBe(0)
+    expect(last('a', 2)).toBe(10 * DAY)
+  })
+
+  it('steps from within a day to within a year, then older', () => {
+    const asOf = 1000 * DAY
+    expect(ageStep(asOf - 3600, asOf)).toBe(5)
+    expect(ageStep(asOf - 3 * DAY, asOf)).toBe(4)
+    expect(ageStep(asOf - 20 * DAY, asOf)).toBe(3)
+    expect(ageStep(asOf - 60 * DAY, asOf)).toBe(2)
+    expect(ageStep(asOf - 200 * DAY, asOf)).toBe(1)
+    expect(ageStep(asOf - 400 * DAY, asOf)).toBe(0)
+    expect(ageStep(0, asOf)).toBe(0)
+  })
+})
+
+describe('kinds and fills', () => {
+  const kinds: ScanNode = {
+    name: 'p', path: '', files: 3, code: 40, tests: 60, docs: 10, children: [
+      { name: 'src', path: 'src', files: 1, code: 40, children: [file('src/x.gd', 0, 40)] },
+      { name: 'tests', path: 'tests', files: 2, tests: 60, docs: 10, children: [
+        { ...file('tests/x_test.gd', 1, 60), kind: 'test' },
+        { ...file('tests/notes.md', 2, 10), kind: 'docs' },
+      ] },
+    ],
+  }
+  const model = buildModel(scanOf(kinds, [{ sha: 'c1', time: 1, author: 't', subject: 'x', files: [0], other: 0 }]))
+  const node = (path: string) => model.byPath.get(path)!
+
+  it('counts test lines in the Lines area and lets tests dominate a folder', () => {
+    expect(node('').lines).toBe(110)
+    expect(node('tests/x_test.gd').lines).toBe(60)
+    expect(dominantKind(model, node('tests'), 'lines')).toBe('test')
+  })
+
+  const swatches = (prefix: string) => ({ code: `${prefix}-code`, test: `${prefix}-test`, docs: `${prefix}-docs`, data: `${prefix}-other`, asset: `${prefix}-asset`, other: `${prefix}-other` })
+  const palette = {
+    heat: ['zero', 'heat-1', 'heat-2', 'heat-3', 'heat-4', 'heat-5'], kind: swatches('kind'), ground: swatches('ground'), unsampled: 'hatch',
+  } as unknown as Palette
+  const scene = (lens: Scene['lens'], asOf = 1 + 3600): Scene => ({
+    model, items: [], itemByNode: new Map(), palette, lens, footprint: 'lines',
+    activity: new Int32Array(model.nodes.length).map((_, i) => (model.nodes[i].path === 'src/x.gd' ? 1 : 0)),
+    age: ages(model, 1, asOf),
+    hover: null, selected: null, touched: null, pointed: [], pulse: 0, labels: true,
+  })
+
+  it('fills counted items with the warm ramp and the rest with their kind’s ground', () => {
+    expect(fillFor(scene('activity'), node('src/x.gd'))).toBe('heat-1')
+    expect(fillFor(scene('activity'), node('tests/x_test.gd'))).toBe('ground-test')
+    expect(fillFor(scene('activity'), node('tests'))).toBe('ground-test')
+    expect(fillFor(scene('age'), node('src/x.gd'))).toBe('heat-5')
+    expect(fillFor(scene('age', 1 + 400 * 86_400), node('src/x.gd'))).toBe('ground-code')
+    expect(fillFor(scene('kind'), node('tests/x_test.gd'))).toBe('kind-test')
+  })
+
+  it('hatches an age the history cannot tell', () => {
+    // The history is complete, and no commit ever touched the notes.
+    expect(fillFor(scene('age'), node('tests/notes.md'))).toBe('hatch')
   })
 })

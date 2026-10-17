@@ -1,9 +1,9 @@
 import { batch, computed, effect, signal } from '@preact/signals'
-import { countActivity, markCommit, markNodes } from './activity'
+import { ages, countActivity, markCommit, markNodes } from './activity'
 import { buildModel, type Footprint, type Model, type Node } from './model'
 import type { PointerItem, Scan } from './types'
 
-export type Lens = 'activity' | 'kind'
+export type Lens = 'activity' | 'age' | 'kind'
 
 export interface Status {
   state: 'idle' | 'scanning' | 'ready' | 'error'
@@ -66,13 +66,32 @@ export const pointers = signal<Pointer[]>([])
 /** Commits counted by the activity lens: [from, to) into model.commits. */
 export const range = signal<[number, number]>([0, 0])
 export const footprint = signal<Footprint>(stored('footprint', ['lines', 'bytes'], 'lines'))
-export const lens = signal<Lens>(stored('lens', ['activity', 'kind'], 'activity'))
+export const lens = signal<Lens>(stored('lens', ['activity', 'age', 'kind'], 'activity'))
 
 export const activity = computed(() => {
   const m = model.value
   if (!m) return null
   const [from, to] = range.value
   return countActivity(m, from, to)
+})
+
+/** Unix seconds, in ten-minute steps, so ages measured from now stay current in a window left open. */
+const now = signal(tenMinutes())
+setInterval(() => (now.value = tenMinutes()), 60_000)
+function tenMinutes() {
+  return Math.floor(Date.now() / 600_000) * 600
+}
+
+/**
+ * Each node's last commit time within commits[0, to), measured from now while the range ends at
+ * the newest commit, otherwise from the range's newest commit.
+ */
+export const age = computed(() => {
+  const m = model.value
+  if (!m) return null
+  const to = range.value[1]
+  const newest = m.commits[to - 1]?.time ?? 0
+  return ages(m, to, to >= m.commits.length ? Math.max(now.value, newest) : newest)
 })
 
 export const touched = computed(() => {

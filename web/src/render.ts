@@ -1,8 +1,8 @@
-import { activityStep } from './activity'
+import { activityStep, nodeAgeStep, UNKNOWN_AGE, type Ages } from './activity'
 import * as format from './format'
 import { GLYPHS, ICON_FONT } from './glyphs'
-import { HEADER, type Item } from './layout'
-import { dominantKind, displayName, type Footprint, type Model, type Node } from './model'
+import type { Item } from './layout'
+import { dominantKind, displayName, LINES_AREA, type Footprint, type Model, type Node } from './model'
 import { prefersDarkText, type Palette } from './palette'
 import type { Lens } from './state'
 
@@ -24,6 +24,8 @@ export interface Scene {
   lens: Lens
   footprint: Footprint
   activity: Int32Array | null
+  /** Last commit times and the moment they are measured from, for the age lens. */
+  age: Ages | null
   hover: Node | null
   selected: Node | null
   touched: Uint8Array | null
@@ -39,11 +41,26 @@ const FONT = '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif'
 const DARK_TEXT = '#0b0b0b'
 const LIGHT_TEXT = '#ffffff'
 
+/**
+ * Kind fills with its full colour. Activity and age fill with the warm ramp, and leave what
+ * they count as zero in the dim ground tint of its kind, so the map never turns uniformly grey.
+ * An age the loaded history cannot tell is hatched.
+ */
 export function fillFor(scene: Scene, node: Node): string | CanvasPattern {
   const { palette } = scene
-  if (scene.lens === 'kind') return palette.kind[dominantKind(scene.model, node, scene.footprint)]
-  if (!scene.model.scan.project.git || !scene.activity) return palette.unsampled
-  return palette.activity[activityStep(scene.activity[node.index])]
+  const kind = dominantKind(scene.model, node, scene.footprint)
+  if (scene.lens === 'kind') return palette.kind[kind]
+  if (!scene.model.scan.project.git) return palette.unsampled
+  let step: number
+  if (scene.lens === 'age') {
+    if (!scene.age) return palette.unsampled
+    step = nodeAgeStep(scene.age, node)
+    if (step === UNKNOWN_AGE) return palette.unsampled
+  } else {
+    if (!scene.activity) return palette.unsampled
+    step = activityStep(scene.activity[node.index])
+  }
+  return step > 0 ? palette.heat[step] : palette.ground[kind]
 }
 
 /** A price tag: a line count (shown with the lines glyph) or a size with its unit. */
@@ -58,7 +75,7 @@ export interface PriceTag {
  */
 export function price(node: Node, footprint: Footprint, short: boolean): PriceTag {
   if (footprint === 'bytes') return { lines: false, text: format.bytes(node.bytes) }
-  if (!node.isFile || node.kind === 'code' || node.kind === 'docs') return { lines: true, text: format.count(node.lines, short) }
+  if (!node.isFile || (node.kind && LINES_AREA.has(node.kind))) return { lines: true, text: format.count(node.lines, short) }
   if (node.src.lines !== undefined) return { lines: true, text: format.count(node.src.lines, short) }
   return { lines: false, text: node.src.bytes !== undefined ? format.bytes(node.bytes) : '—' }
 }
@@ -89,13 +106,12 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, width: nu
   const { palette } = scene
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.globalAlpha = 1
-  ctx.fillStyle = palette.surface
+  ctx.fillStyle = palette.gutter
   ctx.fillRect(0, 0, width, height)
   ctx.setTransform(dpr * view.sx, 0, 0, dpr * view.sy, dpr * view.tx, dpr * view.ty)
 
   const minW = 0.3 / view.sx
   const minH = 0.3 / view.sy
-  const gap = scene.labels ? 0.5 : 0
   const touched = scene.touched
 
   for (const it of scene.items) {
@@ -103,15 +119,14 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, width: nu
     if (it.open) {
       if (it.depth > 0) {
         ctx.globalAlpha = 1
-        ctx.fillStyle = palette.frames[it.depth % 2]
+        ctx.fillStyle = it.depth === 1 ? palette.region : palette.folder
         ctx.fillRect(it.x, it.y, it.w, it.h)
       }
       continue
     }
     ctx.globalAlpha = touched && !touched[it.node.index] ? 0.22 : 1
     ctx.fillStyle = fillFor(scene, it.node)
-    const g = it.w > 4 && it.h > 4 ? gap : 0
-    ctx.fillRect(it.x + g, it.y + g, it.w - 2 * g, it.h - 2 * g)
+    ctx.fillRect(it.x, it.y, it.w, it.h)
   }
   ctx.globalAlpha = 1
 
@@ -134,13 +149,16 @@ function drawLabels(ctx: CanvasRenderingContext2D, scene: Scene) {
 }
 
 function headerLabel(ctx: CanvasRenderingContext2D, scene: Scene, it: Item) {
-  const x = it.x + 5
-  const y = it.y + HEADER / 2 + 0.5
+  // Regions get a larger name than the folders inside them.
+  const region = it.depth === 1
+  const size = region ? 12.5 : 11
+  const x = it.x + (region ? 6 : 5)
+  const y = it.y + it.header / 2 + 0.5
   const room = it.w - 10
   const tag = price(it.node, scene.footprint, true)
   const tagSpace = tagWidth(ctx, tag, 11)
 
-  ctx.font = `600 11px ${FONT}`
+  ctx.font = `600 ${size}px ${FONT}`
   const name = displayName(scene.model, it.node)
   const showTag = room > tagSpace + 40
   const shown = fit(ctx, name, showTag ? room - tagSpace - 7 : room)

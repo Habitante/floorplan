@@ -17,7 +17,10 @@ The product helps a human understand and direct a software project while working
 
 - Text spends attention. Prefer names, measurements and useful project context. Put definitions, colour guides and methodology in tooltips or an info control.
 - Do not add persistent instructions for obvious interactions, explanatory disclaimers, repeated unit words or decorative dashboard prose.
-- Area communicates a selected footprint; fill answers one selected question. Preserve selection and spatial continuity when changing a colour lens.
+- Area communicates a selected footprint. The selected question owns the strong colours; where it reads zero, a dim tint of the file's kind may remain for orientation. Preserve selection and spatial continuity when changing a colour lens.
+- Colour follows the grammar in `DESIGN.md`. Colours are tokens defined in all three theme blocks of `styles.css` (light, the dark media query and the explicit dark theme) and read through `palette.ts`; drawing code holds no colour values.
+- Validate a new or changed colour in each theme before adding it: ramps rise steadily in lightness with adjacent steps about ΔE 9 apart, and every colour stays apart from each colour it can touch under Machado deutan, protan and tritan simulation in OKLab. Record the numbers in `DISCOVERY.md`.
+- Adding a file kind touches `FileKind` in C# and TypeScript, the folder totals, `IsLinesArea` and `LINES_AREA`, `KINDS`, `palette.ts`, `KIND_LABEL`, the info legend and the MCP server's instructions. When colours or lenses change, update the map description in those instructions (`McpCommand.cs`), so agents keep describing the map in the human's terms.
 - Use different representations for containment, dependencies and execution/data flow. Do not force every relationship into a treemap.
 - Show inspectable costs and units. File count, source lines, asset bytes and resident memory are different measurements.
 - Use consistent icons with accessible names. The supplied Font Awesome Pro font is available locally; keep it and derived subsets out of public source/distribution until redistribution rights are established. Use a distributable substitute for a public build if needed.
@@ -47,3 +50,5 @@ The product helps a human understand and direct a software project while working
 Build, test and run commands are in `README.md`; keep them current. Run both test suites and the type check before reporting a change as done.
 
 Test consequential behavior: inventory/aggregation, Git parsing, scope changes, missing data and cross-view selection. Use small fixtures for deterministic checks and a read-only case-study scan for integration. Verify the actual interface at normal and narrow window sizes and measure responsiveness on the case study. Do not label a static sketch or fixture-backed screen as a live implementation.
+
+Board checks must not reach the human's own windows: the MCP server finds every FloorPlan window on the machine, so tests serve their own pipes and name their own project, and real-window checks use smoke windows with an explicit `project`. A normal window started for a check rewrites FloorPlan's settings; restore them afterwards.

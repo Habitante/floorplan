@@ -135,3 +135,32 @@ The owner and a Claude Code session working from the owner's "house" repository 
 - **Wishes taken:** pointing at line ranges (`path:480-492`, highlighted in the reader) and the selected text in `get_selection`.
 
 The board protocol is version 2; windows and servers of version 1 must be restarted.
+
+### 17 October 2026: a colour grammar (Claude)
+
+The owner found the map's colour weak: monochrome heat, regions hard to tell apart, and far less read from colour than it could give. An audit of the dark theme on the case study, with a short range, found:
+
+- **One grey for everything.** Inactive files (`#383835`), folder frames (`#262624`, `#30302d`) and the gaps between them sat within 0.07 of each other in OKLCH lightness, so with few commits in range nearly the whole map was that grey.
+- **Heat read as rust.** Three commits only reach steps 1 and 2–3 (`#925019`, `#b3621e`, chroma about 0.12, ΔE 8 apart, one hue), so the busiest tiles were the dullest colours on screen.
+- **Each lens erased the other**, and **orange meant two things**: documentation in Kind (`#d95926`) was ΔE 6 from activity's 4–7 step (`#d67523`).
+- **Regions did not separate:** every level shared the same one- or two-pixel gap, and the alternating frame greys were ΔE 3 apart.
+
+Decided, with the reasons:
+
+- **Warm means change.** Red through orange to yellow is reserved for time. Activity keeps its fixed steps on a multi-hue ramp, so adjacent steps differ in hue as well as lightness (ΔE ≥ 9.9 dark, ≥ 8.7 light, lightness monotone). Documentation leaves orange for a neutral: the one that contrasts most with the background, a light grey in the dark theme and a dark grey in the light one.
+- **A basemap under the lens.** What Activity or Age leaves at zero keeps a dim tint of its kind instead of one grey. The selected question still owns the strong colours (step 1 is ΔE ≥ 25 from every tint in the dark theme, ≥ 12.9 in the light one), so this orients rather than answering a second question; it bends "fill answers one question" in that sense only. Per-folder region hues were rejected: position and labels already say which region a tile is in, and those hues would compete with kind.
+- **Structure from gaps and darkness, not hue.** Gutters of 6, 3 and 1 px by depth below the focus, a 20 px label strip with a larger name for regions, and frames darker than the files on them. The gaps are part of the layout, so hit-testing and labels agree with what is drawn.
+- **Tests as a kind.** The case study's tests folder is about an eighth of its code, and telling tests from code is a question the owner asks. Path conventions decide it in the classifier (a `test`, `tests`, `__tests__`, `spec` or `specs` folder; `test_x`, `x_test`, `x.test`, `x.spec`, `XTest`, `XTests`, `conftest`), only for files whose extension is code, so fixtures stay data and notes stay documentation. Scans gain a `tests` folder total, and the board's `codeAndDocLines` includes tests. On the case study: 28 files, 6,897 lines.
+- **An Age lens.** Time since each file's last commit, on the same warm ramp: within a day, a week, 30 days, 90 days, a year, then the tint. It is measured at the history range's end (now while the range follows the newest commit), so the strip moves it through time. Every file has an age, so Age never leaves the map grey; on the case study, whose oldest commit is 354 days old, it lights everything, which is accurate.
+- **Uncommitted violet lifted in the dark theme**, from `#9085e9` to `#bda8fc`: the old value was ΔE 3.7 from the code blue under deuteranopia simulation.
+
+Checked in OKLab with Machado deuteranopia, protanopia and tritanopia simulation. Kind hues stay at least 10 apart for deutans and protans. Known weak pairs: tests and assets for tritans (3.1 dark, 5.7 light), which rarely meet because assets take no area under Lines; and in the dark theme, the raspberry pointer against the tests teal for deutans (3.4). The pointer keeps its surface hairline and width there, and no teal tried cleared that pair without breaking another (code for tritans, or documentation for protans).
+
+The proposal was first drawn as a design canvas with the current and proposed palettes side by side on a mock of the case study, then built. On the case study, a Release build drew its first map in 1.15–1.19 s against 1.15–1.24 s for the previous build, both measured while other FloorPlan windows and servers were running.
+
+Reviewed before commit by the main session, with the designing session agreeing:
+
+- **Unknown ages are hatched.** A scan keeps the latest 1,000 commits, so a file without a commit up to the range's end is older than a year only when the history was cut short, no loaded commit touches it, and the oldest loaded commit is more than a year before the range's end. Otherwise it came after the range's end, was never committed, or its last commit was not loaded, so it is hatched like any unmeasured value, and the Age legend shows the hatch.
+- **Two more weak overlay pairs**, measured the same way: in the light theme, the pointer on the 16+ step (`#a32e21`) is ΔE 13.9 for normal vision, under the floor of 15, on the tiles agents point at most; in the dark theme, the pointer on the 2–3 and 4–7 steps is 5.5–5.6 for tritans. The violet stays at least 8.9 from every fill for deutans and protans and 7.2 for tritans. A retune would change the pointer and keep the ramp, whose steps are tied to their separation from the tints.
+- **Agents read age.** File and folder replies carry `lastCommit`, measured as the Age lens measures it.
+- The working rules for colour (validating and recording values, tokens only, what a new kind touches, keeping the agents' map description current) moved from the session's handoff note to AGENTS.md.

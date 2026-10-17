@@ -98,14 +98,17 @@ public sealed class CommitWindow
     /// <summary>Same default as the front end's history strip.</summary>
     public const int DefaultCount = 40;
 
-    CommitWindow(IReadOnlyList<CommitInfo> commits, bool latest)
+    CommitWindow(IReadOnlyList<CommitInfo> commits, IReadOnlyList<CommitInfo> throughEnd, bool latest)
     {
         Commits = commits;
+        ThroughEnd = throughEnd;
         Latest = latest;
     }
 
     /// <summary>Newest first.</summary>
     public IReadOnlyList<CommitInfo> Commits { get; }
+    /// <summary>Every loaded commit up to the range's end, newest first, which is what the age lens reads.</summary>
+    public IReadOnlyList<CommitInfo> ThroughEnd { get; }
     public bool Latest { get; }
 
     /// <summary>The range the human chose, or the latest commits when there is none or it no longer resolves.</summary>
@@ -116,10 +119,18 @@ public sealed class CommitWindow
         {
             int newest = IndexOf(all, to);
             int oldest = IndexOf(all, from);
-            if (newest >= 0 && oldest >= newest) return new CommitWindow(all.Skip(newest).Take(oldest - newest + 1).ToList(), false);
+            if (newest >= 0 && oldest >= newest)
+                return new CommitWindow(all.Skip(newest).Take(oldest - newest + 1).ToList(), all.Skip(newest).ToList(), false);
         }
         int count = range is { Latest: true, Count: > 0 } ? range.Count : DefaultCount;
-        return new CommitWindow(all.Take(count).ToList(), true);
+        return new CommitWindow(all.Take(count).ToList(), all, true);
+    }
+
+    /// <summary>The newest commit up to the range's end that touches the node or anything beneath it.</summary>
+    public CommitInfo? LastCommit(TreeNode node)
+    {
+        var ids = Ids(node);
+        return ThroughEnd.FirstOrDefault(c => c.Files.Any(ids.Contains));
     }
 
     static int IndexOf(IReadOnlyList<CommitInfo> commits, string sha)

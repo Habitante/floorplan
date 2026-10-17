@@ -48,3 +48,73 @@ export function activityStep(count: number): number {
 }
 
 export const ACTIVITY_STEP_LABELS = ['0', '1', '2–3', '4–7', '8–15', '16+']
+
+/**
+ * For every node, the committer time (Unix seconds) of the newest commit in commits[0, to) that
+ * touches it or anything beneath it; 0 when none does.
+ */
+export function lastCommitTimes(model: Model, to: number): Float64Array {
+  const times = new Float64Array(model.nodes.length)
+  // Newest first: the first commit to reach a node is its last change. Climb until an ancestor
+  // already has a time; everything above it was reached by a commit at least as recent.
+  for (let c = Math.min(to, model.commits.length) - 1; c >= 0; c--) {
+    const { time, files } = model.commits[c]
+    for (const id of files) {
+      for (let node: Node | null = model.byFileId[id] ?? null; node && times[node.index] === 0; node = node.parent) {
+        times[node.index] = time
+      }
+    }
+  }
+  return times
+}
+
+const DAY = 86_400
+const YEAR = 365 * DAY
+const AGE_LIMITS = [YEAR, 90 * DAY, 30 * DAY, 7 * DAY, DAY]
+
+/** Discrete age steps, the most recent hottest: 5 within a day, 4 a week, 3 thirty days, 2 ninety days, 1 a year; 0 older. */
+export function ageStep(time: number, asOf: number): number {
+  if (time <= 0) return 0
+  const age = asOf - time
+  let step = 0
+  for (const limit of AGE_LIMITS) if (age <= limit) step++
+  return step
+}
+
+export const AGE_STEP_LABELS = ['Older', '1 year', '90 days', '30 days', '7 days', '1 day']
+
+/** What the age lens draws from. */
+export interface Ages {
+  /** Newest commit up to the range's end touching each node; 0 for none. */
+  times: Float64Array
+  /** Newest commit anywhere in the loaded history touching each node; 0 for none. */
+  ever: Float64Array
+  /** The moment ages are measured from, Unix seconds. */
+  asOf: number
+  /** The history was cut short more than a year before asOf, so a node it never touches is older than that. */
+  olderThanLoaded: boolean
+}
+
+export function ages(model: Model, to: number, asOf: number): Ages {
+  const times = lastCommitTimes(model, to)
+  const ever = to >= model.commits.length ? times : lastCommitTimes(model, model.commits.length)
+  const oldest = model.commits[0]?.time ?? 0
+  return { times, ever, asOf, olderThanLoaded: !model.scan.project.historyComplete && oldest > 0 && asOf - oldest > YEAR }
+}
+
+/** An age that cannot be told from the loaded history; drawn hatched, like other unmeasured values. */
+export const UNKNOWN_AGE = -1
+
+/**
+ * A node's age step. Without a commit up to the range's end, a node is older than a year only when
+ * it has no commit anywhere in a history that was cut short more than a year back. Otherwise its
+ * age is unknown: it came after the range's end, was never committed, or its last commit was not
+ * loaded.
+ */
+export function nodeAgeStep(ages: Ages, node: Node): number {
+  const time = ages.times[node.index]
+  if (time > 0) return ageStep(time, ages.asOf)
+  const change = node.src.change
+  const uncommitted = node.isFile && (change === 'added' || change === 'untracked' || change === 'renamed')
+  return ages.olderThanLoaded && ages.ever[node.index] === 0 && !uncommitted ? 0 : UNKNOWN_AGE
+}

@@ -53,6 +53,27 @@ public class ParsingTests
         Assert.Equal("160000", paths[1].Mode);
     }
 
+    [Theory]
+    [InlineData("tests/test_places.gd", FileKind.Test)]
+    [InlineData("src/Tests/Board.cs", FileKind.Test)]
+    [InlineData("pkg/__tests__/view.tsx", FileKind.Test)]
+    [InlineData("web/src/board.test.ts", FileKind.Test)]
+    [InlineData("web/src/board.spec.js", FileKind.Test)]
+    [InlineData("parser/lexer_test.go", FileKind.Test)]
+    [InlineData("tools/test_rack.py", FileKind.Test)]
+    [InlineData("conftest.py", FileKind.Test)]
+    [InlineData("Core/ScannerTests.cs", FileKind.Test)]
+    [InlineData("Core/ScannerTest.cs", FileKind.Test)]
+    [InlineData("core/latest.gd", FileKind.Code)]
+    [InlineData("core/contest.py", FileKind.Code)]
+    [InlineData("core/Manifest.cs", FileKind.Code)]
+    [InlineData("core/testing_utils.py", FileKind.Code)]
+    [InlineData("tests/errors.txt", FileKind.Docs)]
+    [InlineData("tests/fixture.json", FileKind.Data)]
+    [InlineData("tests/screen.png", FileKind.Asset)]
+    public void Marks_code_under_test_conventions_as_tests(string path, FileKind expected) =>
+        Assert.Equal(expected, FileClassifier.FromName(path));
+
     [Fact]
     public void Aggregates_each_file_once_into_every_ancestor()
     {
@@ -64,20 +85,24 @@ public class ParsingTests
             new FileRecord(2, "a/z.png", FileKind.Asset, EntryStatus.Ok, 1000, null, time, null),
             new FileRecord(3, "a/big.gd", FileKind.Code, EntryStatus.Ok, 9, null, time, "Too large"),
             new FileRecord(4, "gone.gd", FileKind.Code, EntryStatus.Missing, null, null, null, null),
+            new FileRecord(5, "a/tests/x_test.gd", FileKind.Test, EntryStatus.Ok, 30, 3, time, null),
         ]);
 
-        Assert.Equal(5, tree.Files);
-        Assert.Equal(1159, tree.Bytes);
+        Assert.Equal(6, tree.Files);
+        Assert.Equal(1189, tree.Bytes);
         Assert.Equal(10, tree.Code);
+        Assert.Equal(3, tree.Tests);
         Assert.Equal(5, tree.Docs);
         Assert.Equal(2, tree.Unmeasured); // big.gd has no line count, gone.gd has no size
         Assert.Equal(time.AddDays(2), tree.Modified);
 
         var a = tree.Children!.Single(c => c.Name == "a");
         var b = a.Children!.Single(c => c.Name == "b");
-        Assert.Equal(4, a.Files);
+        Assert.Equal(5, a.Files);
+        Assert.Equal(3, a.Tests);
+        Assert.Equal(0, b.Tests);
         Assert.Equal(150, b.Bytes);
         Assert.Equal("a/b", b.Path);
-        Assert.Equal(["b", "big.gd", "z.png"], a.Children!.Select(c => c.Name));
+        Assert.Equal(["b", "big.gd", "tests", "z.png"], a.Children!.Select(c => c.Name));
     }
 }
