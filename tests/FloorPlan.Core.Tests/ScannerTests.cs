@@ -20,7 +20,7 @@ public class ScannerTests
             .Commit("First");
         repo.Write("not-tracked.gd", "x\n");
 
-        var scan = await Scanner.ScanAsync(repo.Root);
+        var scan = await Scanner.ScanAsync(repo.Root, new ScanOptions { IncludeUntracked = false });
 
         Assert.Equal("tracked", scan.Project.Scope);
         Assert.True(scan.Project.Git);

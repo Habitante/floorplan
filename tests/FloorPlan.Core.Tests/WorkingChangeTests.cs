@@ -15,11 +15,14 @@ public class WorkingChangeTests
         var output = Encoding.UTF8.GetBytes(
             " M dir with space/ñandú.gd\0R  renamed2.md\0renamed.md\0?? fresh.gd\0D  gone.gd\0A  added.gd\0?? nested/\0");
 
-        var changes = GitParsers.ParseStatus(output);
+        var renamedFrom = new Dictionary<string, string>();
+        var changes = GitParsers.ParseStatus(output, renamedFrom);
 
         Assert.Equal(WorkingChange.Modified, changes["dir with space/ñandú.gd"]);
         Assert.Equal(WorkingChange.Renamed, changes["renamed2.md"]);
         Assert.False(changes.ContainsKey("renamed.md"));
+        Assert.Equal("renamed.md", Assert.Single(renamedFrom, r => r.Key == "renamed2.md").Value);
+        Assert.Single(renamedFrom);
         Assert.Equal(WorkingChange.Untracked, changes["fresh.gd"]);
         Assert.Equal(WorkingChange.Deleted, changes["gone.gd"]);
         Assert.Equal(WorkingChange.Added, changes["added.gd"]);
@@ -27,14 +30,14 @@ public class WorkingChangeTests
     }
 
     [Fact]
-    public async Task Scan_marks_uncommitted_changes_and_hides_untracked_by_default()
+    public async Task Scan_marks_uncommitted_changes_and_can_hide_untracked_files()
     {
         using var repo = new TempRepo().Write("a.gd", "1\n").Write("b.gd", "1\n").Write("c.gd", "1\n").Commit("Add");
         repo.Write("a.gd", "1\n2\n").Write("new.gd", "x\n").Write("staged.gd", "y\n");
         repo.Git("add", "staged.gd");
         File.Delete(Path.Combine(repo.Root, "c.gd"));
 
-        var scan = await Scanner.ScanAsync(repo.Root);
+        var scan = await Scanner.ScanAsync(repo.Root, new ScanOptions { IncludeUntracked = false });
         var files = Files(scan.Tree).ToDictionary(f => f.Path);
 
         Assert.Equal(WorkingChange.Modified, files["a.gd"].Change);
@@ -48,12 +51,25 @@ public class WorkingChangeTests
     }
 
     [Fact]
-    public async Task Untracked_scope_adds_new_files_but_not_ignored_ones()
+    public async Task A_staged_rename_is_new_at_its_path_and_remembers_the_old_one()
+    {
+        using var repo = new TempRepo().Write("scenes/old name.gd", "1\n2\n").Commit("Add");
+        repo.Git("mv", "scenes/old name.gd", "scenes/new name.gd");
+
+        var files = Files((await Scanner.ScanAsync(repo.Root)).Tree).ToDictionary(f => f.Path);
+
+        Assert.Equal(WorkingChange.Renamed, files["scenes/new name.gd"].Change);
+        Assert.Equal("scenes/old name.gd", files["scenes/new name.gd"].RenamedFrom);
+        Assert.False(files.ContainsKey("scenes/old name.gd"));
+    }
+
+    [Fact]
+    public async Task New_files_are_shown_by_default_but_not_ignored_ones()
     {
         using var repo = new TempRepo().Write(".gitignore", "cache/\n").Write("a.gd", "1\n").Commit("Add");
         repo.Write("new.gd", "x\ny\n").Write("cache/junk.bin", "z");
 
-        var scan = await Scanner.ScanAsync(repo.Root, new ScanOptions { IncludeUntracked = true });
+        var scan = await Scanner.ScanAsync(repo.Root);
         var files = Files(scan.Tree).ToDictionary(f => f.Path);
 
         Assert.Equal("tracked+untracked", scan.Project.Scope);

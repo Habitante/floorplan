@@ -9,7 +9,8 @@ public sealed record FileRecord(
     int? Lines,
     DateTimeOffset? Modified,
     string? Note,
-    WorkingChange? Change = null);
+    WorkingChange? Change = null,
+    string? RenamedFrom = null);
 
 /// <summary>Builds the folder tree and its totals. Each file is counted once, in every ancestor.</summary>
 public static class TreeBuilder
@@ -35,6 +36,7 @@ public static class TreeBuilder
                 Modified = file.Modified,
                 Note = file.Note,
                 Change = file.Change,
+                RenamedFrom = file.RenamedFrom,
             });
         }
 

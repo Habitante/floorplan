@@ -242,7 +242,7 @@ describe('kinds and fills', () => {
     model, items: [], itemByNode: new Map(), palette, lens, footprint: 'lines',
     activity: new Int32Array(model.nodes.length).map((_, i) => (model.nodes[i].path === 'src/x.gd' ? 1 : 0)),
     age: ages(model, 1, asOf),
-    hover: null, selected: null, touched: null, pointed: [], pulse: 0, labels: true,
+    hover: null, selected: null, touched: null, pointed: [], pulse: 0, arrivals: new Map(), labels: true,
   })
 
   it('fills counted items with the warm ramp and the rest with their kind’s ground', () => {

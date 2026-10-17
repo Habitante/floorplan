@@ -25,6 +25,18 @@ export const count = (n: number, short = false) => (short ? compact(n) : int(n))
 export const dateShort = (d: Date) => shortDate.format(d)
 export const dateLong = (d: Date) => longDate.format(d)
 
+const clockTime = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+const weekdayTime = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+
+/** A recent moment as briefly as stays clear: the time today, weekday and time this week, else the date. */
+export function moment(d: Date, now = new Date()): string {
+  const days = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000)
+  if (days < 1) return clockTime.format(d)
+  if (days < 7) return weekdayTime.format(d)
+  return shortDate.format(d)
+}
+
 export function ago(d: Date, now = Date.now()): string {
   const seconds = (d.getTime() - now) / 1000
   const steps: [Intl.RelativeTimeFormatUnit, number][] = [

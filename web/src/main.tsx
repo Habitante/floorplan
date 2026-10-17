@@ -4,7 +4,7 @@ import { connect, send } from './bridge'
 import { App } from './components'
 import { loadIconFonts } from './icons'
 import { zoomOut } from './map-controller'
-import { applyScan, model, openReader, reader, selected, selectedCommit, status, theme } from './state'
+import { applyScan, model, openReader, reader, receiveSince, selected, selectedCommit, status, theme } from './state'
 import './styles.css'
 
 const forced = new URLSearchParams(location.search).get('theme')
@@ -34,7 +34,10 @@ connect(message => {
       status.value = { ...status.peek(), state: 'scanning', phase: message.phase, done: message.done, total: message.total }
       break
     case 'scan':
-      applyScan(message.scan)
+      applyScan(message.scan, message.since)
+      break
+    case 'since':
+      receiveSince(message.since)
       break
     case 'error':
       status.value = { state: 'error', message: message.message, path: message.path }
@@ -56,6 +59,25 @@ connect(message => {
   }
 })
 reportBoard()
+
+// The human's own input tells the host they are here; view changes do not, since refreshes and
+// agents make them too. Chromium repeats pointer events when content changes under a resting
+// cursor, so a pointer counts only when it moves.
+const PRESENCE_EVERY_MS = 10_000
+let lastPresence = -Infinity
+let pointerAt = { x: NaN, y: NaN }
+const present = (e: Event) => {
+  if (e.type === 'pointermove') {
+    const { screenX: x, screenY: y } = e as PointerEvent
+    if (Math.abs(x - pointerAt.x) < 2 && Math.abs(y - pointerAt.y) < 2) return
+    pointerAt = { x, y }
+  }
+  const now = performance.now()
+  if (now - lastPresence < PRESENCE_EVERY_MS) return
+  lastPresence = now
+  send({ type: 'presence' })
+}
+for (const type of ['pointermove', 'pointerdown', 'wheel', 'keydown']) addEventListener(type, present, { capture: true, passive: true })
 
 addEventListener('keydown', e => {
   const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement

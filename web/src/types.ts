@@ -13,6 +13,8 @@ export interface ScanNode {
   status?: EntryStatus
   lines?: number
   change?: WorkingChange
+  /** A renamed file's path before the rename. */
+  renamedFrom?: string
   note?: string
   // Both
   bytes?: number
@@ -37,6 +39,33 @@ export interface Commit {
   files: number[]
   /** Touched paths no longer in the inventory. */
   other: number
+  /** Names in Co-authored-by lines, where agents committing under their human's name sign. */
+  coAuthors?: string[]
+}
+
+export interface Tally {
+  name: string
+  commits: number
+}
+
+/** What landed while the human was away, as the host measured it (FloorPlan.Core's SinceReport). */
+export interface SinceReport {
+  /** The HEAD the human last saw, abbreviated. */
+  seenHead: string
+  /** When the human was last there. */
+  seenAt: string
+  /** Commits since, as git log seen..HEAD counts them. */
+  commits: number
+  /** The oldest of them in the loaded history, abbreviated: where the range starts. */
+  from?: string
+  /** Some are older than the loaded history. */
+  beyondHistory?: boolean
+  /** Why nothing is counted. */
+  problem?: string
+  /** Top-level folders and files of the map they touched. */
+  regions?: Tally[]
+  authors?: Tally[]
+  coAuthors?: Tally[]
 }
 
 export interface ProjectInfo {

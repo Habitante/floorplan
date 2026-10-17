@@ -17,6 +17,7 @@ export const GLYPHS = {
   change: '',
   pointer: '',
   locate: '',
+  since: '',
 } as const
 
 export type IconName = keyof typeof GLYPHS

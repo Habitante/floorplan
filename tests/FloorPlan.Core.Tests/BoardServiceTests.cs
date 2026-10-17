@@ -157,6 +157,19 @@ public class BoardServiceTests
     }
 
     [Fact]
+    public void A_summary_of_the_whole_project_carries_the_windows_briefing()
+    {
+        var surface = Surface();
+        surface.State.SinceLastSeen = new SinceReport { SeenHead = "abc", SeenAt = Now.AddHours(-3), Commits = 4, ShownAt = Now.AddSeconds(-20) };
+
+        var whole = Result<SummaryReport>(BoardService.Handle(surface, new BoardRequest { Op = "summary" }, Now));
+        var part = Result<SummaryReport>(BoardService.Handle(surface, new BoardRequest { Op = "summary", Path = "scenes" }, Now));
+
+        Assert.Equal((4, 20L), (whole.SinceLastSeen!.Commits, whole.SinceLastSeen.SecondsAgo!.Value));
+        Assert.Null(part.SinceLastSeen);
+    }
+
+    [Fact]
     public void Clean_keeps_one_short_line()
     {
         Assert.Equal("a b c", BoardService.Clean("  a\r\n b\t\tc \u0000", 20));
@@ -232,6 +245,23 @@ public class BoardToolsTests
         Assert.Equal(2, summary.Lines);
         Assert.Equal(1, summary.CommitsInRange);
         Assert.True((await tools.SummaryAsync("nope.gd", repo.Root)).IsError);
+    }
+
+    [Fact]
+    public async Task Without_a_window_the_project_summary_says_what_landed_since_the_human_last_looked()
+    {
+        using var repo = new TempRepo().Write("a.gd", "1\n").Commit("Start");
+        var seen = repo.Git("rev-parse", "HEAD").Trim();
+        repo.Write("a.gd", "2\n").Commit("Since");
+        var tools = new BoardTools(repo.Root, new GitRunner(), _ => new ScanOptions(), seen: _ => new SeenMark(seen, DateTimeOffset.Now.AddDays(-1)));
+
+        var whole = Read<SummaryReport>(await tools.SummaryAsync(null, repo.Root));
+        var file = Read<SummaryReport>(await tools.SummaryAsync("a.gd", repo.Root));
+
+        Assert.False(whole.Window);
+        Assert.Equal(1, whole.SinceLastSeen!.Commits);
+        Assert.Equal([new Tally("", 1)], whole.SinceLastSeen.Regions!);
+        Assert.Null(file.SinceLastSeen);
     }
 
     [Fact]

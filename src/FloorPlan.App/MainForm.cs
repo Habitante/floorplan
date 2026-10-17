@@ -21,7 +21,10 @@ sealed class MainForm : Form, IBoardSurface
     readonly WebAssets assets = new();
     readonly GitRunner git = new();
     readonly ProjectScanner scanner;
-    readonly Settings settings = AppData.LoadSettings();
+    /// <summary>A last-seen HEAD given at launch, used instead of the stored one when the first project opens.</summary>
+    string? seenAtLaunch;
+    /// <summary>What this window last stored as seen.</summary>
+    (string Root, string Head, DateTimeOffset At)? seenStored;
     CancellationTokenSource? scanCancellation;
     string? projectPath;
     ProjectScan? lastScan;
@@ -43,7 +46,8 @@ sealed class MainForm : Form, IBoardSurface
     {
         this.launch = launch;
         scanner = new ProjectScanner(git);
-        projectPath = launch.Path is { } p ? Path.GetFullPath(p) : settings.LastProject;
+        projectPath = launch.Path is { } p ? Path.GetFullPath(p) : AppData.LoadSettings().LastProject;
+        seenAtLaunch = launch.Seen;
         Text = "FloorPlan";
         BackColor = Dark ? Color.FromArgb(0x0d, 0x0d, 0x0d) : Color.FromArgb(0xf9, 0xf9, 0xf7);
         StartPosition = FormStartPosition.CenterScreen;
@@ -69,7 +73,7 @@ sealed class MainForm : Form, IBoardSurface
         // Agents find the window by its own pipe, whichever project it shows.
         boardServer = new BoardServer(BoardChannel.PipeName(Environment.ProcessId),
             request => OnUiThread(() => BoardService.Handle(this, request, DateTimeOffset.Now)), AppData.Log);
-        Activated += (_, _) => board.Touch(DateTimeOffset.Now);
+        Activated += (_, _) => Present();
         try
         {
             await InitializeWebViewAsync();
@@ -178,12 +182,18 @@ sealed class MainForm : Form, IBoardSurface
                 if (projectPath is not null) StartScan(projectPath);
                 break;
             case "scope":
-                if (projectPath is not null && message.RootElement.TryGetProperty("untracked", out var untracked))
+                if (projectPath is { } scoped && message.RootElement.TryGetProperty("untracked", out var untracked))
                 {
-                    settings.For(projectPath).IncludeUntracked = untracked.ValueKind == JsonValueKind.True;
-                    AppData.Save(settings);
-                    StartScan(projectPath);
+                    bool include = untracked.ValueKind == JsonValueKind.True;
+                    AppData.UpdateSettings(s => s.For(scoped).HideUntracked = !include);
+                    StartScan(scoped);
                 }
+                break;
+            case "presence":
+                Present();
+                break;
+            case "sinceDismissed":
+                board.SinceLastSeen = null;
                 break;
             case "rendered":
                 OnRendered(message.RootElement);
@@ -254,23 +264,25 @@ sealed class MainForm : Form, IBoardSurface
         {
             if (!cancellation.IsCancellationRequested) Post(new { type = "progress", phase = p.Phase, done = p.Done, total = p.Total });
         });
-        var options = new ScanOptions { IncludeUntracked = settings.For(path).IncludeUntracked };
+        var options = new ScanOptions { IncludeUntracked = !AppData.LoadSettings().For(path).HideUntracked };
 
         try
         {
             var scan = await Task.Run(() => scanner.ScanAsync(path, options, progress, cancellation.Token), cancellation.Token);
             if (cancellation.IsCancellationRequested) return;
+            var scanned = new ProjectIndex(scan);
+            // Opening a project briefs the human on what landed since they last saw it.
+            bool opening = scan.Project.Root != boardRoot;
+            var since = opening ? await BriefingAsync(scanned, OpeningMark(scan)) : null;
+            if (cancellation.IsCancellationRequested) return;
             lastScan = scan;
-            index = new ProjectIndex(scan);
+            index = scanned;
             projectPath = scan.Project.Root;
-            if (launch.SmokeCapture is null)
-            {
-                settings.LastProject = scan.Project.Root;
-                AppData.Save(settings);
-            }
+            if (opening && launch.SmokeCapture is null) AppData.UpdateSettings(s => s.LastProject = scan.Project.Root);
             Text = $"{scan.Project.Name} — FloorPlan";
             ServeBoard(scan.Project.Root);
-            Post(new { type = "scan", scan });
+            if (opening) board.SinceLastSeen = since;
+            Post(new { type = "scan", scan, since });
             Watch(scan);
             if (quiet) AppData.Log($"refresh {scan.Project.DurationMs} ms · {scan.Tree.Files} files · {scan.Commits.Count} commits · {scan.Project.Changes} changes");
         }
@@ -425,6 +437,75 @@ sealed class MainForm : Form, IBoardSurface
         if (boardRoot == root) return;
         board.Reset();
         boardRoot = root;
+    }
+
+    /// <summary>
+    /// The human did something in the window. Back after a while, they are briefed on what landed
+    /// meanwhile, and what the window shows becomes what they last saw.
+    /// </summary>
+    void Present()
+    {
+        var now = DateTimeOffset.Now;
+        var away = now - board.LastActive;
+        bool back = board.Touch(now);
+        if (back) AppData.Log($"back after {away.TotalMinutes:F0} min");
+        if (index is not { Scan.Project: { Git: true, Head: { } head } project } shown) return;
+        // The mark is read before this presence replaces it.
+        if (back) _ = BriefOnReturnAsync(shown, AppData.LoadSettings().Seen(project.Root));
+        Saw(project.Root, head, now);
+    }
+
+    async Task BriefOnReturnAsync(ProjectIndex shown, SeenMark? mark)
+    {
+        var since = await BriefingAsync(shown, mark);
+        if (since is null || index?.Root != shown.Root) return;
+        board.SinceLastSeen = since;
+        Post(new { type = "since", since });
+    }
+
+    /// <summary>What landed since the mark, stamped with when the window shows it; null when nothing did or Git failed.</summary>
+    async Task<SinceReport?> BriefingAsync(ProjectIndex shown, SeenMark? mark)
+    {
+        try
+        {
+            var clock = Stopwatch.StartNew();
+            var since = await Task.Run(() => Since.ComputeAsync(git, shown, mark, CancellationToken.None));
+            if (since is null) return null;
+            AppData.Log($"since {since.SeenHead} · {since.Commits} commits{(since.Problem is null ? "" : " · lost")} · {clock.ElapsedMilliseconds} ms");
+            return since with { ShownAt = DateTimeOffset.Now };
+        }
+        catch (Exception e) when (e is GitException or GitUnavailableException or IOException)
+        {
+            AppData.Log($"since: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Where the briefing on opening a project starts: the commit given at launch, else the HEAD stored as last seen.</summary>
+    SeenMark? OpeningMark(ProjectScan scan)
+    {
+        if (seenAtLaunch is { } sha)
+        {
+            seenAtLaunch = null;
+            long? time = scan.Commits.FirstOrDefault(c => c.Sha.Equals(sha, StringComparison.OrdinalIgnoreCase))?.Time;
+            return new SeenMark(sha, time is { } t ? DateTimeOffset.FromUnixTimeSeconds(t).ToLocalTime() : DateTimeOffset.Now);
+        }
+        return AppData.LoadSettings().Seen(scan.Project.Root);
+    }
+
+    /// <summary>Stores the HEAD the human has seen: when it changes, and otherwise at most once a minute, for the time.</summary>
+    void Saw(string root, string head, DateTimeOffset now)
+    {
+        // Test windows leave the settings alone.
+        if (launch.SmokeCapture is not null) return;
+        if (seenStored is { } stored && stored.Root == root && stored.Head == head && now - stored.At < TimeSpan.FromMinutes(1)) return;
+        AppData.UpdateSettings(s =>
+        {
+            var project = s.For(root);
+            project.SeenHead = head;
+            project.SeenAt = now;
+        });
+        seenStored = (root, head, now);
     }
 
     ProjectIndex? IBoardSurface.Index => index;

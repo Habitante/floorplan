@@ -25,8 +25,8 @@ public class ParsingTests
     {
         // Shape observed from git 2.51: RS header NUL, then LF and NUL-terminated paths.
         var output = Bytes(
-            "\u001eaaa\u001f1792057536\u001fTëst User\u001fEmpty\0" +
-            "\u001ebbb\u001f1792057500\u001fTëst User\u001fSecond: añadir\0\ndir with space/ñandú.gd\0renamed.md\0top.md\0");
+            "\u001eaaa\u001f1792057536\u001fTëst User\u001f\u001fEmpty\0" +
+            "\u001ebbb\u001f1792057500\u001fTëst User\u001f\u001fSecond: añadir\0\ndir with space/ñandú.gd\0renamed.md\0top.md\0");
 
         var commits = GitParsers.ParseLog(output);
 
@@ -37,6 +37,25 @@ public class ParsingTests
         Assert.Equal("Tëst User", commits[1].Author);
         Assert.Equal("Second: añadir", commits[1].Subject);
         Assert.Equal(["dir with space/ñandú.gd", "renamed.md", "top.md"], commits[1].Paths);
+    }
+
+    [Fact]
+    public void Reads_co_authors_once_each_and_not_the_author()
+    {
+        const char RS = '\x1e', US = '\x1f', GS = '\x1d';
+        var output = Bytes(
+            $"{RS}aaa{US}1792057536{US}Habitante{US}Claude Opus 5.5 <noreply@anthropic.com>{GS}Codex <codex@openai.com>{GS}" +
+            $"claude opus 5.5 <other@example.com>{GS}Habitante <h@example.com>{US}Racks\0" +
+            $"{RS}bbb{US}1792057500{US}Habitante{US}%(trailers:key=Co-authored-by){US}An older Git\0" +
+            $"{RS}ccc{US}1792057400{US}Habitante{US}<agent@example.com>{US}An address only\0");
+
+        var commits = GitParsers.ParseLog(output);
+
+        Assert.Equal(["Claude Opus 5.5", "Codex"], commits[0].CoAuthors);
+        Assert.Equal("Racks", commits[0].Subject);
+        Assert.Empty(commits[1].CoAuthors);
+        Assert.Equal("An older Git", commits[1].Subject);
+        Assert.Equal(["agent@example.com"], commits[2].CoAuthors);
     }
 
     [Fact]

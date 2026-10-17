@@ -56,14 +56,24 @@ public sealed class BoardState
     public Choice? Reading { get; private set; }
     /// <summary>Earlier selections, newest first.</summary>
     public IReadOnlyList<Choice> Recent => recent;
-    /// <summary>When the human last did something in the window: changed the view or brought it forward.</summary>
+    /// <summary>
+    /// When the human last did something in the window: moved the mouse over it, clicked, scrolled,
+    /// typed or brought it forward. View changes do not count, since refreshes and agents make them too.
+    /// </summary>
     public DateTimeOffset LastActive { get; private set; } = DateTimeOffset.Now;
+    /// <summary>What landed while the human was away, as the window shows it; null once dismissed.</summary>
+    public SinceReport? SinceLastSeen { get; set; }
 
-    public void Touch(DateTimeOffset now) => LastActive = now;
+    /// <summary>Records the human's presence; true when they come back after <see cref="Since.ReturnAfter"/> or more.</summary>
+    public bool Touch(DateTimeOffset now)
+    {
+        bool back = now - LastActive >= Since.ReturnAfter;
+        LastActive = now;
+        return back;
+    }
 
     public void Update(BoardView view, string? head, DateTimeOffset now)
     {
-        LastActive = now;
         if (view.Selected != Selected?.Path)
         {
             if (Selected is not null) Remember(Selected);
@@ -81,6 +91,7 @@ public sealed class BoardState
         View = new BoardView { Theme = View.Theme };
         Selected = null;
         Reading = null;
+        SinceLastSeen = null;
         recent.Clear();
     }
 

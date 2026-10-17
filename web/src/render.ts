@@ -1,4 +1,5 @@
 import { activityStep, nodeAgeStep, UNKNOWN_AGE, type Ages } from './activity'
+import { changeCounts, changeKind, changeSummary } from './changes'
 import * as format from './format'
 import { GLYPHS, ICON_FONT } from './glyphs'
 import type { Item } from './layout'
@@ -33,11 +34,15 @@ export interface Scene {
   pointed: readonly Node[]
   /** Extra emphasis for a pointer that just arrived, 0 to 1. */
   pulse: number
+  /** New files that just arrived on the map, with their emphasis, 1 on arrival fading to 0. */
+  arrivals: ReadonlyMap<Node, number>
   /** Labels are skipped while animating. */
   labels: boolean
 }
 
 const FONT = '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif'
+/** Edge of a new file's corner mark, in screen pixels. */
+const CORNER = 14
 const DARK_TEXT = '#0b0b0b'
 const LIGHT_TEXT = '#ffffff'
 
@@ -154,9 +159,19 @@ function headerLabel(ctx: CanvasRenderingContext2D, scene: Scene, it: Item) {
   const size = region ? 12.5 : 11
   const x = it.x + (region ? 6 : 5)
   const y = it.y + it.header / 2 + 0.5
-  const room = it.w - 10
+  let room = it.w - 10
   const tag = price(it.node, scene.footprint, true)
   const tagSpace = tagWidth(ctx, tag, 11)
+
+  // A region's uncommitted files by kind, at the right: "+2 ~1 −1". The name keeps its room first.
+  const counts = region ? changeSummary(changeCounts(scene.model, it.node)) : ''
+  ctx.font = `600 11px ${FONT}`
+  const countsWidth = counts ? ctx.measureText(counts).width : 0
+  if (counts && room > countsWidth + 50) {
+    ctx.fillStyle = scene.palette.change
+    ctx.fillText(counts, it.x + it.w - 6 - countsWidth, y)
+    room -= countsWidth + 8
+  }
 
   ctx.font = `600 ${size}px ${FONT}`
   const name = displayName(scene.model, it.node)
@@ -175,7 +190,9 @@ function leafLabel(ctx: CanvasRenderingContext2D, scene: Scene, it: Item) {
   const fill = fillFor(scene, it.node)
   ctx.fillStyle = typeof fill === 'string' ? (prefersDarkText(fill) ? DARK_TEXT : LIGHT_TEXT) : scene.palette.ink2
   const x = it.x + 4
-  const room = it.w - 8
+  // A new file's corner mark takes the top right.
+  const change = it.node.src.change
+  const room = it.w - 8 - (change && changeKind(change) === 'new' ? CORNER : 0)
   ctx.font = `11px ${FONT}`
   ctx.fillText(fit(ctx, it.node.name, room), x, it.y + 9)
   if (it.h >= 30) {
@@ -207,21 +224,35 @@ function drawOverlays(ctx: CanvasRenderingContext2D, scene: Scene, view: View) {
     ctx.strokeRect(item.x + ix + wx / 2, item.y + iy + wy / 2, item.w - 2 * ix - wx, item.h - 2 * iy - wy)
   }
   const outline = (item: Item | undefined, width: number, color: string) => ring(item, 0, width, color)
+  /** A filled triangle in the item's top right corner, up to `size` screen pixels along each edge. */
+  const corner = (item: Item, size: number, color: string) => {
+    const s = Math.min(size, (item.w * view.sx) / 3, (item.h * view.sy) / 3)
+    if (s < 5) return
+    const [sx, sy] = [s / view.sx, s / view.sy]
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.moveTo(item.x + item.w - sx, item.y)
+    ctx.lineTo(item.x + item.w, item.y)
+    ctx.lineTo(item.x + item.w, item.y + sy)
+    ctx.closePath()
+    ctx.fill()
+  }
 
   if (scene.touched) {
     for (const it of scene.items) {
       if (!it.open && scene.touched[it.node.index] && it.w > 5 && it.h > 5) outline(it, 1, scene.palette.ink)
     }
   }
-  // Uncommitted changes, always visible; files too small to draw mark their folder.
-  const marked = new Set<Item>()
+  // Uncommitted changes, always visible; files too small to draw mark their folder. New files
+  // also get a filled corner, and a file that just arrived pulses once.
+  const marked = new Map<Item, number>()
   for (const node of scene.model.changed) {
     const item = drawn(node)
-    if (item && !marked.has(item)) {
-      marked.add(item)
-      outline(item, 2, scene.palette.change)
-    }
+    if (!item) continue
+    marked.set(item, Math.max(marked.get(item) ?? 0, scene.arrivals.get(node) ?? 0))
+    if (item.node === node && changeKind(node.src.change!) === 'new') corner(item, CORNER, scene.palette.change)
   }
+  for (const [item, emphasis] of marked) outline(item, 2 + 3 * emphasis, scene.palette.change)
   // Agents' pointers, likewise. A surface hairline inside keeps the outline legible on any fill.
   const pointed = new Set<Item>()
   const width = 3 + 3 * scene.pulse

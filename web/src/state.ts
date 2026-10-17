@@ -1,7 +1,8 @@
 import { batch, computed, effect, signal } from '@preact/signals'
 import { ages, countActivity, markCommit, markNodes } from './activity'
 import { buildModel, type Footprint, type Model, type Node } from './model'
-import type { PointerItem, Scan } from './types'
+import { onSince, sinceRange, sinceStart } from './since'
+import type { PointerItem, Scan, SinceReport } from './types'
 
 export type Lens = 'activity' | 'age' | 'kind'
 
@@ -65,6 +66,8 @@ export const pointers = signal<Pointer[]>([])
 
 /** Commits counted by the activity lens: [from, to) into model.commits. */
 export const range = signal<[number, number]>([0, 0])
+/** What landed while the human was away, as the host measured it; null once dismissed. */
+export const since = signal<SinceReport | null>(null)
 export const footprint = signal<Footprint>(stored('footprint', ['lines', 'bytes'], 'lines'))
 export const lens = signal<Lens>(stored('lens', ['activity', 'age', 'kind'], 'activity'))
 
@@ -104,12 +107,32 @@ export const touched = computed(() => {
 effect(() => store('footprint', footprint.value))
 effect(() => store('lens', lens.value))
 
-/** Per-project view: the zoomed folder, and the range as "latest N" or a pair of commits. */
-interface StoredView {
-  focus?: string
+/** A range by its commits, since indices shift as history grows: "latest N", or a pair of commits. */
+interface StoredRange {
   latest?: number
   from?: string
   to?: string
+}
+
+/** Per-project view: the zoomed folder and the range. */
+interface StoredView extends StoredRange {
+  focus?: string
+}
+
+function storeRange(m: Model, [from, to]: readonly [number, number]): StoredRange {
+  return to === m.commits.length ? { latest: to - from } : { from: m.commits[from]?.sha, to: m.commits[to - 1]?.sha }
+}
+
+/** The stored range in this history, or the default when it no longer resolves. */
+function resolveRange(m: Model, stored: StoredRange | null): [number, number] {
+  const n = m.commits.length
+  if (stored?.latest !== undefined) return [Math.max(0, n - stored.latest), n]
+  if (stored?.from && stored.to) {
+    const start = m.commits.findIndex(c => c.sha === stored.from)
+    const end = m.commits.findIndex(c => c.sha === stored.to)
+    if (start >= 0 && end >= start) return [start, end + 1]
+  }
+  return [Math.max(0, n - DEFAULT_RANGE), n]
 }
 
 const viewKey = (m: Model) => `view.${m.scan.project.root.toLowerCase()}`
@@ -117,11 +140,8 @@ const viewKey = (m: Model) => `view.${m.scan.project.root.toLowerCase()}`
 effect(() => {
   const m = model.value
   const f = focus.value
-  const [from, to] = range.value
   if (!m || !f) return
-  const view: StoredView = { focus: f.path }
-  if (to === m.commits.length) view.latest = to - from
-  else Object.assign(view, { from: m.commits[from]?.sha, to: m.commits[to - 1]?.sha })
+  const view: StoredView = { focus: f.path, ...storeRange(m, range.value) }
   store(viewKey(m), JSON.stringify(view))
 })
 
@@ -133,20 +153,15 @@ function restoredView(m: Model): { focus: Node; range: [number, number] } | null
     return null
   }
   if (!view) return null
-  const n = m.commits.length
-  let restored: [number, number] = [Math.max(0, n - DEFAULT_RANGE), n]
-  if (view.latest !== undefined) {
-    restored = [Math.max(0, n - view.latest), n]
-  } else if (view.from && view.to) {
-    const start = m.commits.findIndex(c => c.sha === view.from)
-    const end = m.commits.findIndex(c => c.sha === view.to)
-    if (start >= 0 && end >= start) restored = [start, end + 1]
-  }
   const node = view.focus !== undefined ? m.byPath.get(view.focus) : undefined
-  return { focus: node && !node.isFile ? node : m.root, range: restored }
+  return { focus: node && !node.isFile ? node : m.root, range: resolveRange(m, view) }
 }
 
-export function applyScan(scan: Scan) {
+/** The range in place before the briefing's was applied, to switch back to. */
+let beforeSince: StoredRange | null = null
+
+/** Applies a scan. A briefing comes with the scan that opens a project, and starts the range at its commits. */
+export function applyScan(scan: Scan, briefing?: SinceReport) {
   const previous = model.value
   const next = buildModel(scan)
   const same = previous?.scan.project.root === scan.project.root
@@ -157,7 +172,11 @@ export function applyScan(scan: Scan) {
   if (same && previous) {
     const [from, to] = range.value
     const followsLatest = to === previous.commits.length
-    if (followsLatest) {
+    // A range since the human was last here keeps its start, so commits that land join it.
+    const anchor = followsLatest && from === sinceStart(previous, since.value) ? sinceStart(next, since.value) : -1
+    if (anchor >= 0) {
+      nextRange = [anchor, n]
+    } else if (followsLatest) {
       nextRange = [Math.max(0, n - (to - from)), n]
     } else {
       const start = next.commits.findIndex(c => c.sha === previous.commits[from]?.sha)
@@ -178,6 +197,11 @@ export function applyScan(scan: Scan) {
 
   const restored = same ? null : restoredView(next)
   if (restored) nextRange = restored.range
+  if (!same) {
+    const opened = sinceRange(next, briefing ?? null)
+    beforeSince = opened ? storeRange(next, nextRange) : null
+    if (opened) nextRange = opened
+  }
 
   batch(() => {
     model.value = next
@@ -192,9 +216,41 @@ export function applyScan(scan: Scan) {
       ? next.commits.findIndex(c => c.sha === previous?.commits[open.commit as number]?.sha)
       : open?.commit ?? null
     reader.value = openNode && openCommit !== -1 ? { node: openNode, commit: openCommit } : null
-    if (!same) pointers.value = []
+    if (!same) {
+      pointers.value = []
+      since.value = briefing ?? null
+    }
     status.value = { state: 'ready', path: scan.project.root }
   })
+}
+
+/**
+ * A briefing for a human back at an open window. The window is a live view and nothing in it
+ * switches by itself: the chip offers the commits since, and the range moves only when clicked.
+ */
+export function receiveSince(briefing: SinceReport) {
+  since.value = briefing
+}
+
+/** Switches between the commits since the human was last here and the range they had before. */
+export function toggleSince() {
+  const m = model.peek()
+  const briefing = since.peek()
+  const target = m && sinceRange(m, briefing)
+  if (!m || !target) return
+  if (onSince(m, briefing, range.peek())) {
+    range.value = resolveRange(m, beforeSince)
+    beforeSince = null
+  } else {
+    beforeSince = storeRange(m, range.peek())
+    range.value = target
+  }
+}
+
+/** Puts the briefing away; the range stays as it is. */
+export function dismissSince() {
+  since.value = null
+  beforeSince = null
 }
 
 /** Zoom to a folder (a file zooms to its folder). */

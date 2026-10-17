@@ -27,6 +27,7 @@ public sealed class ProjectScanner(GitRunner git)
 
         List<Candidate> candidates;
         var changes = new Dictionary<string, WorkingChange>(StringComparer.Ordinal);
+        var renamedFrom = new Dictionary<string, string>(StringComparer.Ordinal);
         int untrackedHidden = 0;
         if (repository is not null)
         {
@@ -40,7 +41,7 @@ public sealed class ProjectScanner(GitRunner git)
                 }))
                 .ToList();
 
-            changes = await ReadChangesAsync(root, repository.Prefix, cancellationToken);
+            (changes, renamedFrom) = await ReadChangesAsync(root, repository.Prefix, cancellationToken);
             var untracked = changes.Where(c => c.Value == WorkingChange.Untracked).Select(c => c.Key).ToList();
             if (options.IncludeUntracked)
             {
@@ -63,7 +64,7 @@ public sealed class ProjectScanner(GitRunner git)
         {
             var recordPath = records[i].Path;
             if (changes.TryGetValue(recordPath, out var change) || changes.TryGetValue(recordPath + "/", out change))
-                records[i] = records[i] with { Change = change };
+                records[i] = records[i] with { Change = change, RenamedFrom = renamedFrom.GetValueOrDefault(recordPath) };
         }
 
         IReadOnlyList<CommitInfo> commits = [];
@@ -103,16 +104,27 @@ public sealed class ProjectScanner(GitRunner git)
 
     sealed record Repository(string Prefix, string? Head, string? Branch, string GitDirectory);
 
-    /// <summary>Uncommitted changes under the scanned folder, keyed by scan-relative path.</summary>
-    async Task<Dictionary<string, WorkingChange>> ReadChangesAsync(string root, string prefix, CancellationToken cancellationToken)
+    /// <summary>
+    /// Uncommitted changes under the scanned folder, keyed by scan-relative path, and the paths
+    /// renamed files had before (scan-relative when they were inside the folder).
+    /// </summary>
+    async Task<(Dictionary<string, WorkingChange> Changes, Dictionary<string, string> RenamedFrom)> ReadChangesAsync(
+        string root, string prefix, CancellationToken cancellationToken)
     {
         List<string> arguments = [GitRunner.LiteralPathspecs, "status", "--porcelain=v1", "-z", "--untracked-files=all"];
         if (prefix.Length > 0) arguments.AddRange(["--", "."]);
         var status = await git.RunCheckedAsync(root, arguments, cancellationToken);
+        var originals = new Dictionary<string, string>(StringComparer.Ordinal);
         var changes = new Dictionary<string, WorkingChange>(StringComparer.Ordinal);
-        foreach (var (path, change) in GitParsers.ParseStatus(status.Output))
-            if (path.StartsWith(prefix, StringComparison.Ordinal)) changes[path[prefix.Length..]] = change;
-        return changes;
+        var renamedFrom = new Dictionary<string, string>(StringComparer.Ordinal);
+        string Relative(string path) => path.StartsWith(prefix, StringComparison.Ordinal) ? path[prefix.Length..] : path;
+        foreach (var (path, change) in GitParsers.ParseStatus(status.Output, originals))
+        {
+            if (!path.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            changes[Relative(path)] = change;
+            if (originals.TryGetValue(path, out var original)) renamedFrom[Relative(path)] = Relative(original);
+        }
+        return (changes, renamedFrom);
     }
 
     async Task<Repository?> DetectRepositoryAsync(string root, List<ScanIssue> issues, CancellationToken cancellationToken)
@@ -167,7 +179,11 @@ public sealed class ProjectScanner(GitRunner git)
             int other = 0;
             foreach (var p in c.Paths)
                 if (ids.TryGetValue(p, out int id)) files.Add(id); else other++;
-            return new CommitInfo { Sha = c.Sha, Time = c.Time, Author = c.Author, Subject = c.Subject, Files = [.. files], Other = other };
+            return new CommitInfo
+            {
+                Sha = c.Sha, Time = c.Time, Author = c.Author, Subject = c.Subject, Files = [.. files], Other = other,
+                CoAuthors = c.CoAuthors.Count > 0 ? [.. c.CoAuthors] : null,
+            };
         }).ToList();
     }
 

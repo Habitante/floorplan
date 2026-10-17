@@ -65,6 +65,8 @@ public sealed class TreeNode
     public EntryStatus? Status { get; set; }
     public int? Lines { get; set; }
     public WorkingChange? Change { get; set; }
+    /// <summary>A renamed file's path before the rename, which Git reports for staged renames.</summary>
+    public string? RenamedFrom { get; set; }
     public string? Note { get; set; }
 
     // Both: a folder's bytes are the sum of its measured files; its date is the latest beneath it.
@@ -96,6 +98,8 @@ public sealed class CommitInfo
     public required int[] Files { get; init; }
     /// <summary>Touched paths that are not in the current inventory (deleted or renamed since).</summary>
     public int Other { get; init; }
+    /// <summary>Names in its Co-authored-by lines, where agents committing under their human's name sign; null when none.</summary>
+    public string[]? CoAuthors { get; init; }
 }
 
 public sealed record ScanIssue(string? Path, string Message);
@@ -107,8 +111,11 @@ public sealed record ScanOptions
     public int CommitLimit { get; init; } = 1000;
     public long MaxLineCountBytes { get; init; } = 8 * 1024 * 1024;
     public int Concurrency { get; init; } = Math.Clamp(Environment.ProcessorCount, 2, 16);
-    /// <summary>Also show untracked files that Git does not ignore.</summary>
-    public bool IncludeUntracked { get; init; }
+    /// <summary>
+    /// Show untracked files that Git does not ignore, as new: agents create files long before they
+    /// commit them. Off only when the human hides them.
+    /// </summary>
+    public bool IncludeUntracked { get; init; } = true;
     public IReadOnlySet<string> FolderExclusions { get; init; } =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".git", "node_modules", ".vs", "__pycache__", ".venv" };
 }

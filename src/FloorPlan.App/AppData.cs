@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using FloorPlan.Core;
 
 namespace FloorPlan.App;
 
@@ -25,7 +27,36 @@ static class AppData
         return null;
     }
 
+    /// <summary>
+    /// Windows and agents' servers share the settings file, so it is read fresh for each use and
+    /// changed under a lock that every FloorPlan process takes.
+    /// </summary>
+    const string SettingsLock = @"Local\FloorPlan.Settings";
+
     public static Settings LoadSettings()
+    {
+        using var held = Lock();
+        return Read();
+    }
+
+    /// <summary>Re-reads the settings, applies a change and writes them back, so changes from other windows are kept.</summary>
+    public static void UpdateSettings(Action<Settings> change)
+    {
+        using var held = Lock();
+        var settings = Read();
+        change(settings);
+        try
+        {
+            Directory.CreateDirectory(Folder);
+            var temporary = SettingsFile + ".tmp";
+            var options = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+            File.WriteAllText(temporary, JsonSerializer.Serialize(settings, options));
+            File.Move(temporary, SettingsFile, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
+    static Settings Read()
     {
         try
         {
@@ -39,14 +70,29 @@ static class AppData
         }
     }
 
-    public static void Save(Settings settings)
+    /// <summary>Holds the settings lock until disposed; after a short wait, carries on without it.</summary>
+    static IDisposable Lock()
     {
+        var mutex = new Mutex(false, SettingsLock);
+        bool owned;
         try
         {
-            Directory.CreateDirectory(Folder);
-            File.WriteAllText(SettingsFile, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+            owned = mutex.WaitOne(TimeSpan.FromSeconds(2));
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        catch (AbandonedMutexException)
+        {
+            owned = true;
+        }
+        return new Held(mutex, owned);
+    }
+
+    sealed class Held(Mutex mutex, bool owned) : IDisposable
+    {
+        public void Dispose()
+        {
+            if (owned) mutex.ReleaseMutex();
+            mutex.Dispose();
+        }
     }
 
     public static void Log(string line)
@@ -71,13 +117,26 @@ sealed class Settings
 
     public ProjectSettings For(string root)
     {
-        var key = Path.GetFullPath(root).TrimEnd('\\', '/').ToLowerInvariant();
+        var key = Key(root);
         if (!Projects.TryGetValue(key, out var project)) Projects[key] = project = new ProjectSettings();
         return project;
     }
+
+    /// <summary>The HEAD the human last saw on a project, and when.</summary>
+    public SeenMark? Seen(string root) =>
+        Projects.GetValueOrDefault(Key(root)) is { SeenHead: { } head, SeenAt: { } at } ? new SeenMark(head, at) : null;
+
+    static string Key(string root) => Path.GetFullPath(root).TrimEnd('\\', '/').ToLowerInvariant();
 }
 
 sealed class ProjectSettings
 {
-    public bool IncludeUntracked { get; set; }
+    /// <summary>
+    /// New files that Git does not track yet are on the map unless the human hides them. Replaces an
+    /// IncludeUntracked flag that defaulted to off; its stored values were defaults and are ignored.
+    /// </summary>
+    public bool HideUntracked { get; set; }
+    /// <summary>HEAD when the human was last present in a window on the project: where "since I was last here" starts.</summary>
+    public string? SeenHead { get; set; }
+    public DateTimeOffset? SeenAt { get; set; }
 }

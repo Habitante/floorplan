@@ -52,7 +52,9 @@ public static partial class BoardService
                     return BoardReply.Failure($"Not in the scanned project {index.Root}: {request.Path}");
                 var view = surface.State.View;
                 var window = index.Scan.Project.Git ? CommitWindow.For(index.Scan, view.Range) : null;
-                return BoardReply.Success(BoardReports.Summary(index, node, window, view.Area, fromWindow: true));
+                var summary = BoardReports.Summary(index, node, window, view.Area, fromWindow: true);
+                if (node.Path.Length == 0) summary = summary with { SinceLastSeen = BoardReports.Shown(surface.State.SinceLastSeen, now) };
+                return BoardReply.Success(summary);
             }
             default:
                 return BoardReply.Failure($"Unknown request: {request.Op}");
@@ -167,7 +169,9 @@ public sealed record BoardToolResult(string Json, bool IsError);
 /// </summary>
 /// <param name="folder">The agent's working folder: the base of relative paths and the default project.</param>
 /// <param name="startWindow">Starts a window on a folder; false when it could not.</param>
-public sealed class BoardTools(string folder, GitRunner git, Func<string, ScanOptions> scanOptions, Func<string, bool>? startWindow = null)
+/// <param name="seen">The HEAD the human last saw on a project root, for summaries without a window.</param>
+public sealed class BoardTools(
+    string folder, GitRunner git, Func<string, ScanOptions> scanOptions, Func<string, bool>? startWindow = null, Func<string, SeenMark?>? seen = null)
 {
     static readonly TimeSpan OpenTimeout = TimeSpan.FromSeconds(20);
 
@@ -230,7 +234,11 @@ public sealed class BoardTools(string folder, GitRunner git, Func<string, ScanOp
             var index = new ProjectIndex(scan);
             if (index.Find(path ?? "", Folder) is not { } node) return Error($"Not in the scanned project {root}: {path}");
             var window = scan.Project.Git ? CommitWindow.For(scan, null) : null;
-            return Result(BoardReports.Summary(index, node, window, "lines", fromWindow: false));
+            var report = BoardReports.Summary(index, node, window, "lines", fromWindow: false);
+            // What landed since the human last used a window on the project.
+            if (node.Path.Length == 0 && seen?.Invoke(root) is { } mark)
+                report = report with { SinceLastSeen = await Since.ComputeAsync(git, index, mark, cancellationToken) };
+            return Result(report);
         }
         catch (Exception e) when (e is DirectoryNotFoundException or GitException or IOException or UnauthorizedAccessException)
         {

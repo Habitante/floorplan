@@ -9,11 +9,14 @@ import { HistoryController } from './history-controller'
 import { Icon } from './icons'
 import { MapController } from './map-controller'
 import { ancestry, contains, displayName, KINDS, LINES_AREA, weightOf, type Model, type Node } from './model'
+import { changeCounts, changeLabel, changeMark, changeWords, describeChange } from './changes'
 import { price, type PriceTag } from './render'
+import { names, onSince, people, regionName, sinceRange } from './since'
 import {
-  activity, age, focus, footprint, lens, model, openReader, pointers, range, reader, reveal, selected, selectedCommit, status, zoomTo,
+  activity, age, dismissSince, focus, footprint, lens, model, openReader, pointers, range, reader, reveal, selected, selectedCommit, since,
+  status, toggleSince, zoomTo,
 } from './state'
-import type { FileKind, WorkingChange } from './types'
+import type { FileKind, Tally } from './types'
 
 const KIND_LABEL: Record<FileKind, string> = { code: 'Code', test: 'Tests', docs: 'Docs', data: 'Data', asset: 'Assets', other: 'Other' }
 
@@ -202,9 +205,20 @@ function InfoPanel({ model: m, close }: { model: Model; close: () => void }) {
       ) : (
         <div class="legend"><span class="swatch hatch" /><span>No Git history</span></div>
       )}
+      <h3>Outlines</h3>
+      <div class="legend">
+        {p.git && (
+          <>
+            <span class="swatch outline" /><span>Modified, uncommitted</span>
+            <span class="swatch outline new" /><span>New, uncommitted (a renamed file is new at its new path)</span>
+            <span class="counts">+ ~ −</span><span>New, modified and deleted files, counted in region headers</span>
+          </>
+        )}
+        <span class="swatch outline pointer" /><span>An agent's pointer</span>
+      </div>
       <h3>Scan</h3>
       <p>
-        {p.scope === 'folder' ? 'All files in the folder' : p.scope === 'tracked' ? 'Git-tracked files in the working tree' : 'Tracked and untracked files in the working tree'}
+        {p.scope === 'folder' ? 'All files in the folder' : p.scope === 'tracked' ? 'Files in the working tree, new files hidden' : 'Files in the working tree, new files included'}
         {' · '}{format.int(m.root.files)} files
         {p.head && <> · <span class="mono">{p.head.slice(0, 7)}</span></>}
       </p>
@@ -215,13 +229,13 @@ function InfoPanel({ model: m, close }: { model: Model; close: () => void }) {
         </p>
       )}
       {p.git && (
-        <label class="toggle">
+        <label class="toggle" title="New files that Git does not track yet; staged ones always show">
           <input
             type="checkbox"
             checked={p.scope === 'tracked+untracked'}
             onChange={e => send({ type: 'scope', untracked: (e.target as HTMLInputElement).checked })}
           />
-          Include untracked files{p.untrackedHidden > 0 ? ` (${format.int(p.untrackedHidden)} hidden)` : ''}
+          Show new files{p.untrackedHidden > 0 ? ` (${format.int(p.untrackedHidden)} hidden)` : ''}
         </label>
       )}
       <p class="muted">{format.dateLong(new Date(p.scannedAt))} · {format.int(p.durationMs)} ms</p>
@@ -311,6 +325,53 @@ function PointerChips({ model: m }: { model: Model }) {
   )
 }
 
+/**
+ * What landed while the human was away: when they were last here, how many commits, where and by
+ * whom, with the counts in the tooltip. Pressed while the range shows those commits; pressing it
+ * switches between them and the range before.
+ */
+function SinceChip({ model: m }: { model: Model }) {
+  const s = since.value
+  if (!s) return null
+  const target = sinceRange(m, s)
+  const on = onSince(m, s, range.value)
+  const seenAt = new Date(s.seenAt)
+  const line = [names(s.regions, 3, regionName), people(s)].filter(Boolean).join(' · ')
+  const tally = (list?: Tally[]) => (list ?? []).map(t => `${regionName(t.name)} ${format.int(t.commits)}`).join(', ')
+  const detail = [
+    `Since you were last here: ${format.dateLong(seenAt)}, ${s.seenHead}`,
+    s.problem ?? `${format.int(s.commits)} commits${s.beyondHistory ? ', some older than the loaded history' : ''}`,
+    tally(s.regions),
+    tally(s.authors),
+    s.coAuthors ? `Co-authors: ${tally(s.coAuthors)}` : '',
+  ].filter(Boolean).join('\n')
+  const dismiss = () => {
+    dismissSince()
+    send({ type: 'sinceDismissed' })
+  }
+  return (
+    <div class="since-chip">
+      <button
+        class="since-main num"
+        aria-pressed={on}
+        aria-disabled={!target}
+        aria-label={detail.replaceAll('\n', '. ')}
+        title={detail}
+        onClick={toggleSince}
+      >
+        <Icon name="since" />
+        <span>{format.moment(seenAt)}</span>
+        {s.problem
+          ? <span class="since-text">not in this history</span>
+          : <><span><Icon name="commit" />{format.int(s.commits)}</span>{line && <span class="since-text">{line}</span>}</>}
+      </button>
+      <button class="icon-button" aria-label="Dismiss what landed since you were last here" title="Dismiss" onClick={dismiss}>
+        <Icon name="close" />
+      </button>
+    </div>
+  )
+}
+
 function History() {
   const m = model.value
   const host = useRef<HTMLDivElement>(null)
@@ -342,6 +403,7 @@ function History() {
           </button>
         )}
         {first && last && <span>{format.dateShort(format.fromUnix(first.time))} – {format.dateShort(format.fromUnix(last.time))}</span>}
+        <SinceChip model={m} />
         <PointerChips model={m} />
       </div>
       {history && (
@@ -436,7 +498,7 @@ function NodePanel({ model: m, node }: { model: Model; node: Node }) {
           : modified && <span title={format.dateLong(modified)}><Icon name="clock" label="Modified" />{format.ago(modified)}</span>}
       </div>
       {src.note && <div class="note">{src.note}</div>}
-      {src.change && <div class="note change"><Icon name="change" /> {CHANGE_LABEL[src.change]}</div>}
+      {src.change && <div class="note change"><Icon name="change" /> {describeChange(node)}</div>}
       {!node.isFile && <ChangedInside model={m} node={node} />}
       {!node.isFile && (src.unmeasured ?? 0) > 0 && <div class="note">{format.int(src.unmeasured!)} files without a measurement</div>}
 
@@ -500,21 +562,12 @@ function NodePanel({ model: m, node }: { model: Model; node: Node }) {
   )
 }
 
-const CHANGE_LABEL: Record<WorkingChange, string> = {
-  modified: 'Modified, not committed',
-  added: 'Added, not committed',
-  deleted: 'Deleted, not committed',
-  renamed: 'Renamed, not committed',
-  untracked: 'New, not tracked',
-}
-const CHANGE_MARK: Record<WorkingChange, string> = { modified: 'M', added: 'A', deleted: 'D', renamed: 'R', untracked: 'U' }
-
 function ChangedInside({ model: m, node }: { model: Model; node: Node }) {
-  const inside = m.changed.filter(c => c.path.startsWith(node.path === '' ? '' : node.path + '/'))
-  if (inside.length === 0) return null
+  const inside = changeWords(changeCounts(m, node))
+  if (!inside) return null
   return (
     <div class="note change">
-      <Icon name="change" /> {format.int(inside.length)} uncommitted{' · '}
+      <Icon name="change" /> {inside}, uncommitted{' · '}
       <button class="link" onClick={() => (selectedCommit.value = 'working')}>show</button>
     </div>
   )
@@ -532,15 +585,15 @@ function WorkingPanel({ model: m }: { model: Model }) {
         <span><Icon name="file" label="Files" />{format.int(m.changed.length)}</span>
         {hidden > 0 && (
           <button class="link" onClick={() => send({ type: 'scope', untracked: true })}>
-            +{format.int(hidden)} untracked not shown
+            +{format.int(hidden)} new files hidden
           </button>
         )}
       </div>
       <ul class="rows" style={{ marginTop: '12px' }}>
         {m.changed.map(node => (
           <li>
-            <button class="row" onClick={() => openReader(node, 'working')} title={`${node.path} · ${CHANGE_LABEL[node.src.change!]}`}>
-              <span class="change-mark" aria-label={CHANGE_LABEL[node.src.change!]}>{CHANGE_MARK[node.src.change!]}</span>
+            <button class="row" onClick={() => openReader(node, 'working')} title={`${node.path} · ${describeChange(node)}`}>
+              <span class="change-mark" aria-label={changeLabel(node.src.change!)}>{changeMark(node.src.change!)}</span>
               <span class="row-name">{node.path}</span>
               <span class="row-value num"><Tag tag={price(node, footprint.value, true)} /></span>
             </button>

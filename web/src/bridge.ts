@@ -1,11 +1,14 @@
-import type { BoardView, PointerItem, Scan } from './types'
+import type { BoardView, PointerItem, Scan, SinceReport } from './types'
 
 export type HostMessage =
   | { type: 'scanning'; path: string }
   | { type: 'refreshing' }
   | { type: 'refreshed' }
   | { type: 'progress'; phase: string; done: number; total: number }
-  | { type: 'scan'; scan: Scan }
+  /** A briefing comes with the scan that opens a project. */
+  | { type: 'scan'; scan: Scan; since?: SinceReport }
+  /** The human came back to an open window and commits had landed meanwhile. */
+  | { type: 'since'; since: SinceReport }
   | { type: 'error'; message: string; path?: string }
   | { type: 'idle' }
   | { type: 'file' | 'diff'; request: number }
@@ -22,6 +25,9 @@ export type AppMessage =
   | { type: 'readFile'; path: string }
   | { type: 'readDiff'; path: string; commit: string }
   | { type: 'board'; view: BoardView }
+  /** The human's own input in the window, at most every few seconds. */
+  | { type: 'presence' }
+  | { type: 'sinceDismissed' }
 
 interface WebView {
   postMessage(message: unknown): void

@@ -192,6 +192,8 @@ public class BoardTests
             Range = new BoardRange(null, null, 2, Latest: true),
             Theme = "dark",
         }, scan.Project.Head, T0.AddSeconds(10));
+        state.Touch(T0.AddSeconds(10));
+        state.SinceLastSeen = new SinceReport { SeenHead = "0ld", SeenAt = T0.AddHours(-20), Commits = 3, ShownAt = T0.AddSeconds(40) };
 
         var report = BoardReports.Selection(index, state, T0.AddSeconds(70));
 
@@ -212,5 +214,24 @@ public class BoardTests
         Assert.Equal(2, report.Range!.Commits);
         Assert.Equal("core", Assert.Single(report.Recent!).Path);
         Assert.Equal("0ld", Assert.Single(report.Recent!).SelectedAtHead);
+        Assert.Equal((3, 30L), (report.SinceLastSeen!.Commits, report.SinceLastSeen.SecondsAgo!.Value));
+    }
+
+    [Fact]
+    public void Only_the_humans_input_counts_as_presence_and_coming_back_is_noticed()
+    {
+        var state = new BoardState();
+        state.Touch(T0);
+        // Refreshes and agents' reveals change the view too, so a view change is not presence.
+        state.Update(new BoardView { Selected = "scenes" }, "aaa", T0.AddMinutes(30));
+        Assert.Equal(T0, state.LastActive);
+
+        Assert.False(state.Touch(T0.AddMinutes(4)));
+        Assert.True(state.Touch(T0.AddMinutes(4) + Since.ReturnAfter));
+        Assert.Equal(T0.AddMinutes(9), state.LastActive);
+
+        state.SinceLastSeen = new SinceReport { SeenHead = "aaa", SeenAt = T0, Commits = 1 };
+        state.Reset();
+        Assert.Null(state.SinceLastSeen);
     }
 }

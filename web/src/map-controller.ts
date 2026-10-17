@@ -1,6 +1,7 @@
 import { effect } from '@preact/signals'
 import { pointedNodes, pulse } from './board'
 import { send } from './bridge'
+import { arrivedPaths, changeCounts, changeWords, describeChange } from './changes'
 import * as format from './format'
 import { GLYPHS, iconFontsLoaded, type IconName } from './glyphs'
 import { hitTest, layoutTree, type Item } from './layout'
@@ -13,6 +14,8 @@ import {
 } from './state'
 
 const ANIMATION_MS = 260
+/** How long a new file's outline pulses after a refresh brings it onto the map. */
+const ARRIVAL_MS = 2000
 
 interface Animation {
   /** 'in': the new layout grows out of `from`; 'out': the new layout shrinks so `from` fills the view. */
@@ -37,6 +40,8 @@ export class MapController {
   private lastWheel = 0
   private readonly cleanup: (() => void)[] = []
   private readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
+  /** New files that refreshes brought onto the map, by path, with when they arrived. */
+  private readonly arrivals = new Map<string, number>()
 
   constructor(
     private readonly host: HTMLElement,
@@ -59,6 +64,17 @@ export class MapController {
     this.cleanup.push(() => scheme.removeEventListener('change', onScheme))
 
     this.cleanup.push(effect(() => this.relayout(model.value, focus.value, footprint.value)))
+    // A new file pulses once when a refresh of the same project brings it, unless motion is reduced.
+    let shown: Model | null = null
+    this.cleanup.push(effect(() => {
+      const m = model.value
+      if (m?.scan.project.root !== shown?.scan.project.root) this.arrivals.clear()
+      else if (m && shown && m !== shown && !this.reducedMotion.matches) {
+        const now = performance.now()
+        for (const path of arrivedPaths(shown, m)) this.arrivals.set(path, now)
+      }
+      shown = m
+    }))
     this.cleanup.push(effect(() => {
       void lens.value, activity.value, hovered.value, selected.value, touched.value, pointers.value, iconFontsLoaded.value
       if (lens.value === 'age') void age.value
@@ -158,8 +174,16 @@ export class MapController {
       if (t >= 1) this.animation = null
     }
 
+    const now = performance.now()
     const pointing = pointers.peek()
-    const emphasis = this.reducedMotion.matches ? 0 : pulse(pointing, performance.now())
+    const emphasis = this.reducedMotion.matches ? 0 : pulse(pointing, now)
+    const arrived = new Map<Node, number>()
+    for (const [path, at] of this.arrivals) {
+      const t = (now - at) / ARRIVAL_MS
+      const node = t < 1 ? m.byPath.get(path) : undefined
+      if (node) arrived.set(node, (1 - t) ** 2)
+      else this.arrivals.delete(path)
+    }
     drawScene(this.ctx, {
       model: m,
       items: this.items,
@@ -174,10 +198,11 @@ export class MapController {
       touched: touched.peek(),
       pointed: pointedNodes(m, pointing),
       pulse: emphasis,
+      arrivals: arrived,
       labels: this.animation === null,
     }, this.width, this.height, this.dpr, view)
 
-    if (this.animation || emphasis > 0) this.request()
+    if (this.animation || emphasis > 0 || arrived.size > 0) this.request()
     if (this.reportedModel !== m) {
       this.reportedModel = m
       send({ type: 'rendered', files: m.root.files, items: this.items.length, ms: Math.round(performance.now()) })
@@ -274,11 +299,14 @@ export class MapController {
     title.className = 'tip-path'
     title.textContent = path
     this.tip.replaceChildren(title, price)
-    if (src.note) {
-      const note = document.createElement('div')
-      note.className = 'tip-note'
-      note.textContent = src.note
-      this.tip.append(note)
+    const inside = node.isFile ? '' : changeWords(changeCounts(m, node))
+    const change = node.isFile ? describeChange(node) : inside ? `${inside}, uncommitted` : null
+    for (const [text, className] of [[change, 'tip-change'], [src.note, 'tip-note']] as const) {
+      if (!text) continue
+      const line = document.createElement('div')
+      line.className = className
+      line.textContent = text
+      this.tip.append(line)
     }
 
     this.tip.hidden = false

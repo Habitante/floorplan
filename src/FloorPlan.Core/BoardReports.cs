@@ -95,6 +95,8 @@ public sealed record SelectionReport
     public required string Fill { get; init; }
     public required string Theme { get; init; }
     public IReadOnlyList<NodeReport>? Recent { get; init; }
+    /// <summary>What landed while the human was away, as the window shows it.</summary>
+    public SinceReport? SinceLastSeen { get; init; }
     /// <summary>Other open windows; added by the agent's server, which sees them all.</summary>
     public IReadOnlyList<WindowReport>? OtherWindows { get; init; }
 }
@@ -124,6 +126,8 @@ public sealed record SummaryReport
     public int? UncommittedNotListed { get; init; }
     public IReadOnlyList<NodeReport>? Largest { get; init; }
     public IReadOnlyList<CommitReport>? RecentCommits { get; init; }
+    /// <summary>For the whole project: what landed since the human last saw it.</summary>
+    public SinceReport? SinceLastSeen { get; init; }
 }
 
 public sealed record ShowReport
@@ -263,8 +267,13 @@ public static class BoardReports
             Fill = view.Fill,
             Theme = view.Theme,
             Recent = state.Recent.Count > 0 ? state.Recent.Select(r => Stamped(r, measure: false)).ToList() : null,
+            SinceLastSeen = Shown(state.SinceLastSeen, now),
         };
     }
+
+    /// <summary>A briefing with how long ago the window showed it.</summary>
+    public static SinceReport? Shown(SinceReport? since, DateTimeOffset now) =>
+        since is { ShownAt: { } at } ? since with { SecondsAgo = Seconds(now - at) } : since;
 
     /// <summary>Footprint, composition and activity of a file or folder.</summary>
     public static SummaryReport Summary(ProjectIndex index, TreeNode node, CommitWindow? window, string area, bool fromWindow)
