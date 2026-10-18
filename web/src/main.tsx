@@ -4,7 +4,7 @@ import { connect, send } from './bridge'
 import { App } from './components'
 import { loadIconFonts } from './icons'
 import { zoomOut } from './map-controller'
-import { applyScan, model, openReader, reader, receiveSince, selected, selectedCommit, status, theme } from './state'
+import { applyScan, finding, model, openReader, reader, receiveSince, selected, selectedCommit, status, theme } from './state'
 import './styles.css'
 
 const forced = new URLSearchParams(location.search).get('theme')
@@ -80,6 +80,12 @@ const present = (e: Event) => {
 for (const type of ['pointermove', 'pointerdown', 'wheel', 'keydown']) addEventListener(type, present, { capture: true, passive: true })
 
 addEventListener('keydown', e => {
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p') {
+    // The file finder, which also keeps the browser's print dialog away.
+    e.preventDefault()
+    if (model.peek()) finding.value = true
+    return
+  }
   const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
   if (typing) return
   if (e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r')) {

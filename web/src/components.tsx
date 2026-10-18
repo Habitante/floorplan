@@ -4,19 +4,20 @@ import { ACTIVITY_STEP_LABELS, AGE_STEP_LABELS } from './activity'
 import { describeItem, pointedNodes } from './board'
 import { dismissPointer, goTo } from './board-controller'
 import { send } from './bridge'
+import { Finder } from './finder'
 import * as format from './format'
 import { HistoryController } from './history-controller'
-import { Icon } from './icons'
+import { Icon, Tag } from './icons'
 import { MapController } from './map-controller'
 import { ancestry, contains, displayName, KINDS, LINES_AREA, weightOf, type Model, type Node } from './model'
 import { changeCounts, changeLabel, changeMark, changeWords, describeChange } from './changes'
-import { price, type PriceTag } from './render'
+import { price } from './render'
 import { names, onSince, people, regionName, sinceRange } from './since'
 import {
-  activity, age, dismissSince, focus, footprint, lens, model, openReader, pointers, range, reader, reveal, selected, selectedCommit, since,
-  status, toggleSince, zoomTo,
+  activity, age, dismissSince, finding, focus, footprint, lens, model, openReader, pointers, range, reader, readerFocus, reveal, selected,
+  selectedCommit, since, status, toggleSince, zoomTo, type Pointer,
 } from './state'
-import type { FileKind, Tally } from './types'
+import type { FileKind, PointerItem, Tally } from './types'
 
 const KIND_LABEL: Record<FileKind, string> = { code: 'Code', test: 'Tests', docs: 'Docs', data: 'Data', asset: 'Assets', other: 'Other' }
 
@@ -42,6 +43,21 @@ function TopBar() {
       <button class="icon-button" title="Open folder (Ctrl+O)" aria-label="Open folder" onClick={() => send({ type: 'open' })}>
         <Icon name="folderOpen" />
       </button>
+      {m && (
+        <button
+          class="icon-button"
+          title="Find a file or folder (Ctrl+P)"
+          aria-label="Find a file or folder"
+          aria-expanded={finding.value}
+          onClick={e => {
+            e.stopPropagation()
+            finding.value = !finding.value
+          }}
+        >
+          <Icon name="search" />
+        </button>
+      )}
+      {m && finding.value && <Finder model={m} />}
       {m && f && (
         <nav class="crumbs" aria-label="Location">
           {ancestry(f).map((n, i) => (
@@ -288,40 +304,111 @@ function MapView() {
 
 /**
  * Agents' pointers: who points and why, beside the map rather than over it, so no fill is
- * hidden. The outlined paths and their count are in the tooltip.
+ * hidden. The row has room for the start of a caption; clicking it opens the whole note with the
+ * outlined paths.
  */
 function PointerChips({ model: m }: { model: Model }) {
   const list = pointers.value
   const f = focus.value
+  const reading = useSignal<string | null>(null)
   if (list.length === 0) return null
+  const open = list.find(p => p.agent === reading.value)
   return (
-    <ul class="pointers" aria-label="Agents pointing at the map">
-      {list.map(p => {
-        const nodes = pointedNodes(m, [p])
-        const outside = f ? nodes.filter(n => !contains(f, n)).length : 0
-        const detail = [
-          `${p.agent} · ${format.dateLong(new Date(p.at))}`,
-          ...p.items.slice(0, 12).map(i => (i.note ? `${i.note} (not on the map; ${i.path} outlined)` : describeItem(i))),
-          p.items.length > 12 ? `+${format.int(p.items.length - 12)} more` : '',
-          outside > 0 ? `${format.int(outside)} outside this view` : '',
-        ].filter(Boolean).join('\n')
-        return (
-          <li class="pointer-chip" key={p.agent}>
-            <button class="pointer-main" title={detail} onClick={() => goTo(p)}>
-              <Icon name="pointer" />
-              <span class="pointer-agent">{p.agent}</span>
-              {p.caption && <span class="pointer-caption">{p.caption}</span>}
-            </button>
-            <button class="icon-button" aria-label={`Show what ${p.agent} points at`} title="Show on the map" onClick={() => goTo(p)}>
-              <Icon name="locate" />
-            </button>
-            <button class="icon-button" aria-label={`Dismiss ${p.agent}'s pointer`} title="Dismiss" onClick={() => dismissPointer(p.agent)}>
-              <Icon name="close" />
-            </button>
-          </li>
-        )
-      })}
-    </ul>
+    <>
+      <ul class="pointers" aria-label="Agents pointing at the map">
+        {list.map(p => {
+          const nodes = pointedNodes(m, [p])
+          const outside = f ? nodes.filter(n => !contains(f, n)).length : 0
+          const detail = [
+            `${p.agent} · ${format.dateLong(new Date(p.at))}`,
+            p.caption,
+            ...p.items.slice(0, 12).map(i => (i.note ? `${i.note} (not on the map; ${i.path} outlined)` : describeItem(i))),
+            p.items.length > 12 ? `+${format.int(p.items.length - 12)} more` : '',
+            outside > 0 ? `${format.int(outside)} outside this view` : '',
+          ].filter(Boolean).join('\n')
+          return (
+            <li class="pointer-chip" key={p.agent}>
+              <button
+                class="pointer-main"
+                title={detail}
+                aria-expanded={p === open}
+                onClick={e => {
+                  e.stopPropagation()
+                  reading.value = p === open ? null : p.agent
+                }}
+              >
+                <Icon name="pointer" />
+                <span class="pointer-agent">{p.agent}</span>
+                {p.caption && <span class="pointer-caption">{p.caption}</span>}
+              </button>
+              <button class="icon-button" aria-label={`Show what ${p.agent} points at`} title="Show on the map" onClick={() => goTo(p)}>
+                <Icon name="locate" />
+              </button>
+              <button class="icon-button" aria-label={`Dismiss ${p.agent}'s pointer`} title="Dismiss" onClick={() => dismissPointer(p.agent)}>
+                <Icon name="close" />
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      {open && <PointerNote model={m} pointer={open} close={() => (reading.value = null)} />}
+    </>
+  )
+}
+
+/**
+ * An agent's whole note, over the foot of the map until closed, with the paths it outlines:
+ * clicking one reads it, at the lines pointed at, or selects a folder.
+ */
+function PointerNote({ model: m, pointer: p, close }: { model: Model; pointer: Pointer; close: () => void }) {
+  const panel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (!panel.current?.contains(e.target as globalThis.Node)) close()
+    }
+    // Ahead of the window's own Escape, which would close the reader.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      close()
+    }
+    document.addEventListener('click', onClick)
+    addEventListener('keydown', onKey, { capture: true })
+    return () => {
+      document.removeEventListener('click', onClick)
+      removeEventListener('keydown', onKey, { capture: true })
+    }
+  }, [])
+  const showItem = (item: PointerItem, node: Node) => {
+    if (!node.isFile) return reveal(node)
+    if (item.from !== undefined) readerFocus.value = { path: item.path, from: item.from, to: item.to ?? item.from }
+    openReader(node)
+  }
+  return (
+    <div class="popover pointer-note" ref={panel} role="dialog" aria-label={`${p.agent}'s note`}>
+      <div class="eyebrow">{p.agent} · {format.dateLong(new Date(p.at))}</div>
+      {p.caption && <p class="pointer-text">{p.caption}</p>}
+      <ul class="rows">
+        {p.items.map(item => {
+          const node = m.byPath.get(item.path)
+          if (!node) return <li class="row faded"><Icon name="file" /><span class="row-name">{describeItem(item)}</span><span /></li>
+          return (
+            <li>
+              <button
+                class="row"
+                title={item.note ? `Not on the map; ${item.path} outlined` : describeItem(item)}
+                onClick={() => showItem(item, node)}
+              >
+                <Icon name={node.isFile ? 'file' : 'folder'} />
+                <span class={item.note ? 'row-name muted' : 'row-name'}>{describeItem(item)}</span>
+                {/* Off the map, the outlined folder's measure is not the named path's. */}
+                <span class="row-value num">{!item.note && <Tag tag={price(node, footprint.value, true)} />}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }
 
@@ -414,13 +501,6 @@ function History() {
       )}
     </section>
   )
-}
-
-/** A price tag: line counts carry the lines glyph instead of a unit word. */
-function Tag({ tag }: { tag: PriceTag }) {
-  return tag.lines
-    ? <span class="tag" aria-label={`${tag.text} lines`}><Icon name="lines" />{tag.text}</span>
-    : <span class="tag">{tag.text}</span>
 }
 
 type ReaderComponent = typeof import('./reader').Reader

@@ -17,6 +17,7 @@ export const GLYPHS = {
   change: '',
   pointer: '',
   locate: '',
+  search: '',
   since: '',
 } as const
 

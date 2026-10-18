@@ -1,6 +1,6 @@
 import { batch, computed, effect, signal } from '@preact/signals'
 import { ages, countActivity, markCommit, markNodes } from './activity'
-import { buildModel, type Footprint, type Model, type Node } from './model'
+import { buildModel, weightOf, type Footprint, type Model, type Node } from './model'
 import { onSince, sinceRange, sinceStart } from './since'
 import type { PointerItem, Scan, SinceReport } from './types'
 
@@ -47,6 +47,9 @@ export const NO_LINES: ReaderLines = { visible: null, selection: null, text: nul
 export const readerLines = signal<ReaderLines>(NO_LINES)
 /** Lines the reader should bring into view for a pointer, once it shows that file. */
 export const readerFocus = signal<{ path: string; from: number; to: number } | null>(null)
+
+/** The file finder (Ctrl+P) is open. */
+export const finding = signal(false)
 
 /** The theme the window is drawn in. */
 export const theme = signal<'light' | 'dark'>('light')
@@ -273,6 +276,36 @@ export function openReader(node: Node, commit: number | 'working' | null = null)
 function showOnMap(node: Node) {
   for (let n: Node | null = node; n; n = n.parent) if (n === focus.value) return
   zoomTo(node.parent ?? node)
+}
+
+/**
+ * Shows a file or folder chosen by name. A folder becomes the view. A file is read in its folder,
+ * as clicking it does: within a selected commit or the uncommitted changes that touched it, its
+ * diff. Something without area under the footprint is marked on the nearest folder that has area,
+ * as uncommitted changes and pointers are.
+ */
+export function jumpTo(node: Node) {
+  const weight = weightOf(footprint.peek())
+  let view: Node = node
+  if (weight(node) === 0) {
+    // The view in which the nearest folder with area is drawn, and so carries the selection.
+    let marked = node.parent
+    while (marked?.parent && weight(marked) === 0) marked = marked.parent
+    view = marked?.parent ?? marked ?? node
+  } else if (node.isFile) {
+    view = node.parent ?? node
+  }
+  batch(() => {
+    focus.value = view
+    if (node.isFile) {
+      const commit = selectedCommit.peek()
+      openReader(node, commit !== null && touched.peek()?.[node.index] ? commit : null)
+    } else {
+      selectedCommit.value = null
+      reader.value = null
+      selected.value = view === node ? null : node
+    }
+  })
 }
 
 /** Select a node and make sure the map shows it. */

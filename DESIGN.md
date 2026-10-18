@@ -141,7 +141,7 @@ Documentation signals:
 
 The server's instructions describe the map as the human sees it (area, fill, colours, outlines, where captions sit), so agents can talk about it in its own terms, and say how to treat stale selections, diffs and project choice. The view reports its theme.
 
-Pointers are raspberry outlines with a hairline of the surface colour inside, checked in both themes against the warm ramp, the kind hues and tints, and the uncommitted violet. Captions sit in the row under the map. Per-agent colours wait until two agents point at once in practice; a history of pointers waits for a need.
+Pointers are raspberry outlines with a hairline of the surface colour inside, checked in both themes against the warm ramp, the kind hues and tints, and the uncommitted violet. Captions sit in the row under the map, which has room for a caption's start. Clicking it opens the whole note over the foot of the map until closed, with the agent, the time and the paths as rows: a file reads at the lines pointed at, a folder is selected, and a path off the map shows what the agent named without its folder's measure. Per-agent colours wait until two agents point at once in practice; a history of pointers waits for a need.
 
 The agent registers the server once, for example `claude mcp add --scope user floorplan -- <path>\floorplan.exe mcp`. User and local scopes keep the entry in the user's own configuration; project scope would write `.mcp.json` into the inspected repository.
 
@@ -195,7 +195,7 @@ Acceptance: on the case study, after commits land while FloorPlan is closed, reo
 
 #### 1f. File finder
 
-Ctrl+P opens a fuzzy finder over the project's files and folders, answering at typing speed; choosing one zooms the map to it and selects it. It is invoked, not persistent, so the daily interface stays lean.
+Ctrl+P, or the magnifier in the top bar, opens a fuzzy finder over the project's files and folders, answering at typing speed. A term matches when its characters appear in the path in order, case and accents aside; a whole name, the term found whole, runs that start a folder or word, and matches in the name rather than the folders rank first, and spaces separate terms that must all match. Among equal matches, those with area under the current footprint come first. Rows carry the price tag and the uncommitted mark, and rows without area are faded. Choosing a folder zooms the map into it; choosing a file reads it in its folder, as clicking it does. Something without area under the footprint is marked on its nearest folder that has area, as uncommitted changes and pointers are. It is invoked, not persistent, so the daily interface stays lean.
 
 Acceptance: any file of the case study is reachable with Ctrl+P and a few characters, and the map shows it selected.
 

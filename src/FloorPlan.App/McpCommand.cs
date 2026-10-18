@@ -29,7 +29,8 @@ static class McpCommand
         "code, teal tests, green assets, and documentation the grey that contrasts most with the background; data and other " +
         "files are the muted grey. Violet outlines mark uncommitted changes, with a filled corner on new files (renamed ones " +
         "count as new), and region headers count new, modified and deleted files in violet (+2 ~1 −1); raspberry outlines " +
-        "are agents' pointers, with their captions in the row under the map. The strip along the bottom is the commit history, and its highlighted " +
+        "are agents' pointers, with their captions in the row under the map, which shows a caption's start; clicking it opens " +
+        "the whole note with its paths. The strip along the bottom is the commit history, and its highlighted " +
         "range is what activity and age count; a chip in the row above it says what landed since the human was last there " +
         "and, when clicked, switches the range to those commits. The reader beside the map shows a file or a diff.\n\n" +
         "When the human says \"this\", \"here\" or \"these\", call get_selection. If it reports stale, the human has not " +
@@ -85,7 +86,7 @@ static class McpCommand
                 McpServerTool.Create(
                     async (
                         [Description("Files or folders to outline: paths relative to the project root or your working folder, or absolute. Add \":480-492\" to a file to point at those lines.")] string[] paths,
-                        [Description("One short line the human reads under the map, e.g. \"Where saving reads the player's state\". Empty paths clear your pointer.")] string caption,
+                        [Description("What the human reads under the map, e.g. \"Where saving reads the player's state\". The row shows its start and a click opens the rest, so lead with the point. Empty paths clear your pointer.")] string caption,
                         McpServer server,
                         [Description("Your name as the human should see it, when several agents share the board, e.g. \"Claude (save system)\".")] string? agent = null,
                         [Description(ProjectParameter)] string? project = null,
