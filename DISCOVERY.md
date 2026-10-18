@@ -254,3 +254,13 @@ Recorded, for the owner to decide:
 Budgets ([README.md](README.md)) leave headroom of roughly 1.4 to 1.6 times over both baselines, so run-to-run noise and other FloorPlan processes do not trip them. Interaction budgets come from what a person notices: 16 ms per redraw (one frame at 60 Hz), 100 ms from input to paint, which reads as immediate, and 50 ms per finder keystroke. For context, the Godot game's first baseline (16 October, 2,862 files) drew its first map in 0.87 s; it takes 1.06 s now, after the colour grammar, tests as a kind and the briefing.
 
 Method: smoke windows for scan, first map and memory, and a Node MCP client against a smoke window on Flutter, which no window of the owner's showed. Interaction was timed in headless Edge with a stand-in host and the same front end, recording each animation frame and the browser's input-to-paint timing. Headless Edge sometimes marks a page hidden and stops animation frames, which hung the first runs; keeping the page in front fixed it.
+
+### 18 October 2026: ages from the newest commit (Claude, with the owner)
+
+Told that Age read nearly blank on Flutter, the owner suggested measuring ages from the most recent commit or change, everywhere. Decided:
+
+- **From the range's newest commit, always.** "From now" kept a live project current. But Flutter's newest commit was 247 days old, so it put all 4,723 files with a loaded last commit in one step. Measured from the newest commit, they spread: 56 within a day, 62 within 30 days, 4,408 within 90 days (mostly the lint sweep) and 195 within a year. Coming back after a pause, the map shows what was recent when work stopped, which is what the human returns for; how long ago that was is on the history strip and in the briefing. For a live project the two differ by minutes. The ten-minute clock that kept "from now" current in an open window is gone.
+- **Not from uncommitted changes.** They have no commit time, and file times move with checkouts, builds and copies. Measuring from the latest save would also recolour the whole map each time an agent saved a file. The violet outlines already say "changed, not committed".
+- **Dates stay dates.** The tooltip and the inspector still give a last commit as "3 days ago", counted from today, since that is a date and not a step. The Age legend names the commit it measures from, and the agents' map description says the same.
+
+The owner also agreed that broad commits wait for milestone 3, which already counts them for less. More file kinds can come when wanted; the owner suggested at least counting the lines of rarer files that are text.

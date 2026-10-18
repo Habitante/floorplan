@@ -183,6 +183,8 @@ function InfoPanel({ model: m, close }: { model: Model; close: () => void }) {
     }
   }, [])
   const p = m.scan.project
+  // Age is measured from the range's newest commit.
+  const newest = m.commits[range.value[1] - 1]
   const swatch = (name: string) => <span class="swatch" style={{ background: `var(${name})` }} />
 
   return (
@@ -206,7 +208,7 @@ function InfoPanel({ model: m, close }: { model: Model; close: () => void }) {
         <>
           {lens.value === 'activity'
             ? <p>Commits in the selected history range touching each file or folder. A commit counts once per folder.</p>
-            : <p>Time since the last commit touching each file or folder, as of the end of the selected range. Within:</p>}
+            : <p>Time from the last commit touching each file or folder to the newest commit in the selected range{newest ? `, ${format.dateShort(format.fromUnix(newest.time))}` : ''}. Within:</p>}
           <div class="legend">
             {(lens.value === 'activity' ? ACTIVITY_STEP_LABELS : AGE_STEP_LABELS).map((label, i) => (
               <>{swatch(i === 0 ? '--zero' : `--act-${i}`)}<span>{label}</span></>
@@ -215,7 +217,7 @@ function InfoPanel({ model: m, close }: { model: Model; close: () => void }) {
           </div>
           <p>Files at zero keep a dim tint of their kind.</p>
           {lens.value === 'age' && (
-            <p>Unknown: no commit loaded up to the range's end, because the file came later, was never committed or is older than the loaded history.</p>
+            <p>Unknown: no commit loaded up to that one, because the file came later, was never committed or is older than the loaded history.</p>
           )}
         </>
       ) : (

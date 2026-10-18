@@ -81,23 +81,15 @@ export const activity = computed(() => {
   return countActivity(m, from, to)
 })
 
-/** Unix seconds, in ten-minute steps, so ages measured from now stay current in a window left open. */
-const now = signal(tenMinutes())
-setInterval(() => (now.value = tenMinutes()), 60_000)
-function tenMinutes() {
-  return Math.floor(Date.now() / 600_000) * 600
-}
-
 /**
- * Each node's last commit time within commits[0, to), measured from now while the range ends at
- * the newest commit, otherwise from the range's newest commit.
+ * Each node's last commit time within commits[0, to), measured from the range's newest commit: a
+ * project keeps its own pace while work pauses, and an old checkout is not all one step.
  */
 export const age = computed(() => {
   const m = model.value
   if (!m) return null
   const to = range.value[1]
-  const newest = m.commits[to - 1]?.time ?? 0
-  return ages(m, to, to >= m.commits.length ? Math.max(now.value, newest) : newest)
+  return ages(m, to, m.commits[to - 1]?.time ?? 0)
 })
 
 export const touched = computed(() => {

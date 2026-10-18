@@ -22,8 +22,8 @@ static class McpCommand
         "is a file's lines in code, tests and documentation (area: lines) or its size on disk (area: bytes). Fill shows " +
         "activity, age or kind. Activity and age share one warm ramp from red through orange to yellow, where more is " +
         "brighter in the dark theme and darker in the light one: activity counts commits in the human's history range, and " +
-        "age is how recently a file was last committed, as of the range's end (strongest within a day, faintest within a " +
-        "year). Files with no commits in the range, or none within a year, keep a dim tint of their kind; under age, hatching " +
+        "age is how long before the range's newest commit a file was last committed (strongest within a day of it, faintest " +
+        "within a year). Files with no commits in the range, or none within a year, keep a dim tint of their kind; under age, hatching " +
         "marks a file whose last commit the loaded history cannot tell (it came later, was never committed, or is older than " +
         "the history FloorPlan read). Replies give each file and folder's lastCommit, as age shows it. With kind, blue is " +
         "code, teal tests, green assets, and documentation the grey that contrasts most with the background; data and other " +
