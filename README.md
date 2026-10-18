@@ -21,11 +21,11 @@ From the author's original note:
 
 ## Status
 
-Milestone 2 in use (16 October 2026). `floorplan.exe` opens a folder and draws every file as a nested treemap, and coding agents can ask what the human has selected, point at files and lines on it, and open it. Of milestone 1, steps 1a–1c are done; the owner's visual tweaks (1d) continue, the first of them, a colour grammar with an Age lens and tests as their own kind, in since 17 October 2026. Of the steps added to the roadmap on 17 October, 1e ("since I was last here") is done the same day; 1f and 1g are open, and the performance budgets wait for 1g.
+Milestone 2 in use (16 October 2026). `floorplan.exe` opens a folder and draws every file as a nested treemap, and coding agents can ask what the human has selected, point at files and lines on it, and open it. Of milestone 1, steps 1a–1c are done; the owner's visual tweaks (1d) continue, so far a colour grammar with an Age lens and tests as their own kind, and new files and the kinds of change marked on the map, all on 17 October 2026. Of the steps added to the roadmap on 17 October, 1e ("since I was last here") is done the same day; 1f and 1g are open, and the performance budgets wait for 1g.
 
 Working:
 
-- **Scan:** Git-tracked files in the working tree (or every file in a plain folder), with size, physical lines, kind (code, tests, docs, data, assets, other) and up to 1,000 commits of history. Read-only: Git runs without optional locks or repository-configured helpers, and a test checks that `.git` is left untouched.
+- **Scan:** files in the working tree that Git tracks, plus new files it does not ignore (or every file in a plain folder), with size, physical lines, kind (code, tests, docs, data, assets, other) and up to 1,000 commits of history. Read-only: Git runs without optional locks or repository-configured helpers, and a test checks that `.git` is left untouched.
 - **Map:** canvas treemap down to individual files, with gutters that widen toward the top-level regions. Area is Lines or Bytes; fill is Activity (commits in range), Age (time since the last commit) or Kind. Activity and Age share one warm ramp, and what they leave at zero keeps a dim tint of its kind; an age the loaded history cannot tell is hatched. Zoom with double-click, the mouse wheel, the breadcrumb or Backspace. Tooltips show each item's measurements.
 - **Inspector:** measurements, composition by kind, contents (including files with no weight under the current area), and recent commits for the selection.
 - **History strip:** drag to choose the commits counted by Activity; click a commit to see the files it touched.
