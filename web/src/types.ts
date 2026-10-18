@@ -62,10 +62,14 @@ export interface SinceReport {
   beyondHistory?: boolean
   /** Why nothing is counted. */
   problem?: string
-  /** Top-level folders and files of the map they touched. */
+  /** Top-level folders and files of the map they touched, those with most commits first. */
   regions?: Tally[]
   authors?: Tally[]
   coAuthors?: Tally[]
+  /** How many more names each list leaves out. */
+  moreRegions?: number
+  moreAuthors?: number
+  moreCoAuthors?: number
 }
 
 export interface ProjectInfo {

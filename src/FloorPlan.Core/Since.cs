@@ -28,9 +28,13 @@ public sealed record SinceReport
     public string? Problem { get; init; }
     /// <summary>The top-level folders of the map that the commits touched; "" stands for the files at the top level.</summary>
     public IReadOnlyList<Tally>? Regions { get; init; }
+    /// <summary>How many more regions there are than those listed, which are the ones with most commits.</summary>
+    public int? MoreRegions { get; init; }
     public IReadOnlyList<Tally>? Authors { get; init; }
+    public int? MoreAuthors { get; init; }
     /// <summary>Names in co-author lines, where agents committing under their human's name sign.</summary>
     public IReadOnlyList<Tally>? CoAuthors { get; init; }
+    public int? MoreCoAuthors { get; init; }
     /// <summary>When the window showed it: on opening the project, or when the human came back.</summary>
     public DateTimeOffset? ShownAt { get; init; }
     public long? SecondsAgo { get; init; }
@@ -48,6 +52,12 @@ public static partial class Since
     public static readonly TimeSpan ReturnAfter = TimeSpan.FromMinutes(5);
 
     public const string LostProblem = "The commit last seen is not in this history: rebased, reset or on another branch";
+
+    /// <summary>
+    /// Names listed per tally, most commits first; the rest are only counted. A large project can
+    /// bring well over a hundred authors, too many for a tooltip or an agent's reply.
+    /// </summary>
+    public const int TallyLimit = 10;
 
     [GeneratedRegex("^[0-9a-fA-F]{40}$")]
     private static partial Regex Sha();
@@ -110,19 +120,25 @@ public static partial class Since
             int slash = path.IndexOf('/');
             return slash > 0 ? path[..slash] : "";
         }
+        var (regions, moreRegions) = Tallies(loaded.SelectMany(c => c.Files.Select(Region).OfType<string>().Distinct()));
+        var (authors, moreAuthors) = Tallies(loaded.Select(c => c.Author));
+        var (coAuthors, moreCoAuthors) = Tallies(loaded.SelectMany(c => c.CoAuthors ?? []));
         return mark with
         {
             Commits = unseen.Count,
             From = loaded.Count > 0 ? BoardReports.Short(loaded[^1].Sha) : null,
             BeyondHistory = loaded.Count < unseen.Count ? true : null,
-            Regions = Tallies(loaded.SelectMany(c => c.Files.Select(Region).OfType<string>().Distinct())),
-            Authors = Tallies(loaded.Select(c => c.Author)),
-            CoAuthors = Tallies(loaded.SelectMany(c => c.CoAuthors ?? [])),
+            Regions = regions,
+            MoreRegions = moreRegions,
+            Authors = authors,
+            MoreAuthors = moreAuthors,
+            CoAuthors = coAuthors,
+            MoreCoAuthors = moreCoAuthors,
         };
     }
 
-    /// <summary>Each name with its count, most first; null when there are none.</summary>
-    static List<Tally>? Tallies(IEnumerable<string> names)
+    /// <summary>The names with most commits, at most <see cref="TallyLimit"/>, and how many more there are; nulls when none.</summary>
+    static (List<Tally>? Listed, int? More) Tallies(IEnumerable<string> names)
     {
         var tallies = names
             .GroupBy(n => n, StringComparer.OrdinalIgnoreCase)
@@ -130,6 +146,7 @@ public static partial class Since
             .OrderByDescending(t => t.Commits)
             .ThenBy(t => t.Name, StringComparer.Ordinal)
             .ToList();
-        return tallies.Count > 0 ? tallies : null;
+        if (tallies.Count == 0) return (null, null);
+        return (tallies.Take(TallyLimit).ToList(), tallies.Count > TallyLimit ? tallies.Count - TallyLimit : null);
     }
 }

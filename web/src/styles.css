@@ -481,6 +481,9 @@ button:focus-visible, canvas:focus-visible, [tabindex]:focus-visible {
   min-width: 0;
 }
 
+/* The counts and dates keep their line; the chips beside them give way and truncate. */
+.history-head > span, .history-head > .pending { flex: none; white-space: nowrap; }
+
 /* Agents' pointers, beside the map rather than over it */
 
 .pointers {

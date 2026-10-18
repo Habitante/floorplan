@@ -81,6 +81,30 @@ public class SinceTests
     }
 
     [Fact]
+    public async Task Lists_the_names_with_most_commits_and_counts_the_rest()
+    {
+        using var repo = new TempRepo().Write("a.gd", "0\n").Commit("Start");
+        var seen = Head(repo);
+        // Twelve authors; the last two commit twice, so they lead the list.
+        for (int i = 1; i <= 14; i++)
+        {
+            int person = i <= 12 ? i : i - 2;
+            repo.Write("a.gd", $"{i}\n").Git("add", "-A");
+            repo.Git("-c", $"user.name=Person {person:00}", "-c", "user.email=p@example.com", "commit", "-q", "-m", $"Step {i}");
+        }
+
+        var since = (await SinceAsync(repo, seen))!;
+
+        Assert.Equal(14, since.Commits);
+        Assert.Equal(Since.TallyLimit, since.Authors!.Count);
+        Assert.Equal([new Tally("Person 11", 2), new Tally("Person 12", 2), new Tally("Person 01", 1)], since.Authors.Take(3));
+        Assert.Equal(12 - Since.TallyLimit, since.MoreAuthors);
+        Assert.Null(since.MoreRegions);
+        Assert.Null(since.CoAuthors);
+        Assert.Null(since.MoreCoAuthors);
+    }
+
+    [Fact]
     public async Task A_merge_seen_as_head_counts_from_there()
     {
         using var repo = new TempRepo().Write("a.gd", "1\n").Commit("Start");

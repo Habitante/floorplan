@@ -21,7 +21,7 @@ From the author's original note:
 
 ## Status
 
-Milestone 2 in use (16 October 2026). `floorplan.exe` opens a folder and draws every file as a nested treemap, and coding agents can ask what the human has selected, point at files and lines on it, and open it. Of milestone 1, steps 1a–1c are done; the owner's visual tweaks (1d) continue, so far a colour grammar with an Age lens and tests as their own kind, and new files and the kinds of change marked on the map, all on 17 October 2026. Of the steps added to the roadmap on 17 October, 1e ("since I was last here") is done the same day and 1f, the file finder, on 18 October; 1g is open, and the performance budgets wait for it.
+Milestone 2 in use (16 October 2026). `floorplan.exe` opens a folder and draws every file as a nested treemap, and coding agents can ask what the human has selected, point at files and lines on it, and open it. Of milestone 1, steps 1a–1c are done; the owner's visual tweaks (1d) continue, so far a colour grammar with an Age lens and tests as their own kind, and new files and the kinds of change marked on the map, all on 17 October 2026. Of the steps added to the roadmap on 17 October, 1e ("since I was last here") is done the same day, and on 18 October 1f, the file finder, and 1g, a second case study (the Flutter SDK) with milestone 1's performance budgets set from both.
 
 Working:
 
@@ -33,31 +33,33 @@ Working:
 - **Live refresh:** the map rescans when project files change or a commit lands, ignoring Git-ignored output and editors' index updates. Uncommitted changes are outlined in violet and collected as a pending entry at the end of the history strip. New files that Git does not track yet are on the map too; the info panel can hide them per project. New and renamed files also get a filled violet corner and pulse once when they arrive, and region headers count new, modified and deleted files (`+2 ~1 −1`).
 - **Reader:** click a file to read it with syntax colouring, in the side panel (drag its edge to resize; the map keeps its layout). Chips switch between the file, its uncommitted diff and the diffs of recent commits that touched it. Inside a selected commit, clicking a file opens that commit's diff.
 - **Remembered view:** each project reopens at its last zoom and history range; a range ending at the newest commit keeps following new commits.
-- **Since I was last here:** FloorPlan remembers the HEAD each project had when the human was last present in a window on it (their own input: pointer, keys, bringing the window forward). Reopening the project opens the range at the commits since, and a chip in the history row says when the human was last there, how many commits landed, the top-level regions they touched and who made them, naming agents from co-author lines. Back at an open window after five minutes without input, the chip appears again and offers the new commits; an open window never switches by itself. The chip toggles between the commits since and the range before. A rebased-away or unloaded starting point is reported, not guessed.
+- **Since I was last here:** FloorPlan remembers the HEAD each project had when the human was last present in a window on it (their own input: pointer, keys, bringing the window forward). Reopening the project opens the range at the commits since, and a chip in the history row says when the human was last there, how many commits landed, the top-level regions they touched and who made them, naming agents from co-author lines (the ten with most commits in each list, and how many more). Back at an open window after five minutes without input, the chip appears again and offers the new commits; an open window never switches by itself. The chip toggles between the commits since and the range before. A rebased-away or unloaded starting point is reported, not guessed.
 - **Shared board:** one `floorplan mcp` server serves every open window, choosing by the project a call names, an absolute path, or the window the human used last. `get_selection` returns the selected file or folder with when it was chosen and at which HEAD, the reader's file with the lines in view, the selected lines and text, the zoom, the history range, recent selections, the time since the human's last input in the window, what landed while they were away (`sinceLastSeen`) and the other open windows. `show` outlines files, folders and line ranges with a caption in every window on the project (one pointer per agent, listed under the map, where clicking a caption opens the whole note with its paths); paths off the map outline their nearest folder, and `reveal` brings it all into view. `summary` reports footprint and activity from the model on screen, and file and folder replies carry their last commit as Age shows it; a summary of the whole project adds `sinceLastSeen`, with or without a window. `open` raises or starts a window without taking the keyboard. Without a window, `get_selection` and `show` say nobody is looking and `summary` scans the project.
 - **Executable modes:** window, `scan` (JSON on stdout), `mcp` (MCP server on stdio) and `--smoke` (capture plus measurements).
 
 In the agent's second round on the case study, mouse-selected text reached the agent, clearing a pointer worked, and `open` raised a window; whether a window an agent opened outlives the agent's session is not yet tried.
 
-Next: 1g, a second case study with the performance budgets; then milestone 3, files that change together. See the [roadmap](DESIGN.md#milestones).
+Next: milestone 3, files that change together. See the [roadmap](DESIGN.md#milestones).
 
-Case-study baseline (a private Godot game: 2,862 files, 467 commits; published executable, 1600×1000 window):
+### Baselines and budgets
 
-| Measure | Value |
-|---|---|
-| Scan | 0.34 s |
-| First map after launch | 0.87 s |
-| Memory, private | 118 MiB host, 181 MiB WebView2 (5 processes); 245 MiB WebView2 with the reader open |
-| Board call with a window open | 2–14 ms; 36 ms to draw in two windows |
-| `floorplan mcp` start | 0.22 s |
-| `open`, starting a window until scanned | 0.6 s |
-| Executable | 53.1 MB, single file |
+Two case studies: a private Godot game (2,973 files, 561 commits), and the Flutter SDK (15,352 files, 3,530 folders, the latest 1,000 of 87,655 commits), both inspected read-only. Measured on 18 October 2026 with the published executable in a 1600×1000 window, while other FloorPlan windows and servers ran. A change that takes a measure past its budget is fixed, or its reason recorded in [DISCOVERY.md](DISCOVERY.md).
 
-On 17 October 2026, at 2,906 files and 551 commits (Release build, other FloorPlan servers running): scan 0.46–0.56 s, first map 1.07–1.28 s, 122 MiB host and 172 MiB WebView2. The briefing on opening a project takes 51–58 ms for ten commits and is part of the first map.
+| Measure | Godot game | Flutter | Budget (Godot game / Flutter) |
+|---|---|---|---|
+| Scan | 0.42 s | 0.82–0.86 s; 2.2 s with a cold file cache | 0.75 s / 1.5 s |
+| First map after launch | 1.05–1.06 s | 1.51–1.62 s | 1.5 s / 2.5 s |
+| Memory, private, host | 116–117 MiB | 154–160 MiB | 160 / 220 MiB |
+| Memory, private, WebView2 (5 processes) | 177–179 MiB | 206–212 MiB | 250 / 300 MiB |
+| Lens, area or zoom: input to paint | | 16–64 ms | 100 ms |
+| Redraw: hover, zoom animation | | 3–7 ms | 16 ms |
+| File finder, per keystroke | 2.8 ms or less to match | 6–21 ms to results; 61 ms for the first, which builds the index | 50 ms; 100 ms for the first |
+| Board call with a window open | 2–14 ms | 3–4 ms `get_selection`, 16–40 ms `summary`, 33–54 ms `show` of 12 paths | 100 ms |
+| `summary` without a window (a fresh scan) | | 1.1 s | 2 s |
 
-On 18 October 2026, the file finder's matching takes at most 2.8 ms per keystroke over the case study's 2,955 files and folders, and 10 ms for a single character over a five-fold copy (14,776); its index is built on first use, 11 ms and 42 ms. Running the front end in headless Edge on the case study, every keystroke's results were drawn by the next frame.
+Interaction was measured on Flutter, the harder case, in headless Edge running the same front end. The Godot game's board calls are from 16 October, as are `floorplan mcp` starting in 0.22 s and `open` starting a window and scanning in 0.6 s. With the reader open, WebView2 used 245 MiB on the Godot game. The executable is 53.1 MB, single file. The briefing on opening a project takes 51–58 ms for ten commits on the Godot game and is part of its first map.
 
-The scan's file set, byte and line totals, and per-file commit counts for the latest 40 commits matched independent Git and filesystem queries. Smoke runs keep their own WebView2 data folder, so an open window does not share their browser processes or skew these figures.
+The scan's file set, byte and line totals, and per-file commit counts for the latest 40 commits matched independent Git and filesystem queries on the Godot game. On Flutter, the briefing's count of 1,500 commits since a chosen starting point matched `git rev-list --no-merges --count`. Smoke runs keep their own WebView2 data folder, so an open window does not share their browser processes or skew these figures.
 
 ## Build and run
 

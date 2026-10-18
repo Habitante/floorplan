@@ -23,11 +23,12 @@ export function onSince(m: Model, since: SinceReport | null, range: readonly [nu
   return target !== null && target[0] === range[0] && target[1] === range[1]
 }
 
-/** The first few names, and how many more. */
-export function names(tallies: readonly Tally[] | undefined, limit: number, label = (name: string) => name): string {
+/** The first few names, and how many more, counting those the host left out of the list. */
+export function names(tallies: readonly Tally[] | undefined, limit: number, label = (name: string) => name, left = 0): string {
   if (!tallies?.length) return ''
   const shown = tallies.slice(0, limit).map(t => label(t.name)).join(', ')
-  return tallies.length > limit ? `${shown} +${tallies.length - limit}` : shown
+  const more = Math.max(0, tallies.length - limit) + left
+  return more > 0 ? `${shown} +${more}` : shown
 }
 
 /** A region as the note names it: files at the top level count as one region, "". */
@@ -35,7 +36,7 @@ export const regionName = (name: string) => (name === '' ? 'top level' : name)
 
 /** Who made the commits: their authors, with the agents named as co-authors. */
 export function people(since: SinceReport): string {
-  const authors = names(since.authors, 2)
-  const agents = names(since.coAuthors, 2)
+  const authors = names(since.authors, 2, undefined, since.moreAuthors)
+  const agents = names(since.coAuthors, 2, undefined, since.moreCoAuthors)
   return authors && agents ? `${authors} with ${agents}` : authors || agents
 }

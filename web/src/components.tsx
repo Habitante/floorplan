@@ -423,14 +423,15 @@ function SinceChip({ model: m }: { model: Model }) {
   const target = sinceRange(m, s)
   const on = onSince(m, s, range.value)
   const seenAt = new Date(s.seenAt)
-  const line = [names(s.regions, 3, regionName), people(s)].filter(Boolean).join(' · ')
-  const tally = (list?: Tally[]) => (list ?? []).map(t => `${regionName(t.name)} ${format.int(t.commits)}`).join(', ')
+  const line = [names(s.regions, 3, regionName, s.moreRegions), people(s)].filter(Boolean).join(' · ')
+  const tally = (list?: Tally[], more?: number) =>
+    [...(list ?? []).map(t => `${regionName(t.name)} ${format.int(t.commits)}`), ...(more ? [`+${format.int(more)} more`] : [])].join(', ')
   const detail = [
     `Since you were last here: ${format.dateLong(seenAt)}, ${s.seenHead}`,
     s.problem ?? `${format.int(s.commits)} commits${s.beyondHistory ? ', some older than the loaded history' : ''}`,
-    tally(s.regions),
-    tally(s.authors),
-    s.coAuthors ? `Co-authors: ${tally(s.coAuthors)}` : '',
+    tally(s.regions, s.moreRegions),
+    tally(s.authors, s.moreAuthors),
+    s.coAuthors ? `Co-authors: ${tally(s.coAuthors, s.moreCoAuthors)}` : '',
   ].filter(Boolean).join('\n')
   const dismiss = () => {
     dismissSince()

@@ -88,4 +88,11 @@ describe('since I was last here', () => {
     expect(people(both)).toBe('Habitante with Claude Opus 5.5')
     expect(people(briefing('x', { authors: [{ name: 'Ana', commits: 1 }, { name: 'Luis', commits: 1 }] }))).toBe('Ana, Luis')
   })
+
+  it('counts the names the host left out of its lists', () => {
+    const ten = Array.from({ length: 10 }, (_, i) => ({ name: `P${i}`, commits: 10 - i }))
+    expect(names(ten, 3, undefined, 120)).toBe('P0, P1, P2 +127')
+    expect(people(briefing('x', { authors: ten, moreAuthors: 120 }))).toBe('P0, P1 +128')
+    expect(names(ten.slice(0, 2), 3, undefined, 0)).toBe('P0, P1')
+  })
 })
