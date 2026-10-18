@@ -24,6 +24,8 @@ export type AppMessage =
   | { type: 'rendered'; files: number; items: number; ms: number }
   | { type: 'readFile'; path: string }
   | { type: 'readDiff'; path: string; commit: string }
+  /** What changes with a file; the host answers from the scan on screen. */
+  | { type: 'relations'; path: string }
   | { type: 'board'; view: BoardView }
   /** The human's own input in the window, at most every few seconds. */
   | { type: 'presence' }
@@ -34,7 +36,8 @@ interface WebView {
   addEventListener(type: 'message', listener: (event: MessageEvent) => void): void
 }
 
-const webview = (window as unknown as { chrome?: { webview?: WebView } }).chrome?.webview
+// globalThis rather than window, so modules that ask the host also load in tests.
+const webview = (globalThis as unknown as { chrome?: { webview?: WebView } }).chrome?.webview
 
 /** True inside the desktop window; false in a browser preview. */
 export const inHost = webview !== undefined

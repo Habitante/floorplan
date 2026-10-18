@@ -30,7 +30,8 @@ static class McpCommand
         "files are the muted grey. Violet outlines mark uncommitted changes, with a filled corner on new files (renamed ones " +
         "count as new), and region headers count new, modified and deleted files in violet (+2 ~1 −1); raspberry outlines " +
         "are agents' pointers, with their captions in the row under the map, which shows a caption's start; clicking it opens " +
-        "the whole note with its paths. The strip along the bottom is the commit history, and its highlighted " +
+        "the whole note with its paths. A selected file has a strong ink outline, and fainter ink outlines mark the files " +
+        "that change with it (summary gives them as changesWith). The strip along the bottom is the commit history, and its highlighted " +
         "range is what activity and age count; a chip in the row above it says what landed since the human was last there " +
         "and, when clicked, switches the range to those commits. The reader beside the map shows a file or a diff.\n\n" +
         "When the human says \"this\", \"here\" or \"these\", call get_selection. If it reports stale, the human has not " +
@@ -122,7 +123,10 @@ static class McpCommand
                             "Footprint and activity of a folder or file from the model the human sees: files, lines (a folder's " +
                             "codeAndDocLines; composition adds data), bytes, commits in the human's history range, the last commit, uncommitted files, " +
                             "the largest parts and recent commits; for the whole project, also what landed since the human last saw it. " +
-                            "Without an open window it scans the project and counts the latest 40 commits.",
+                            "For a file, also the files that change in the same commits over the loaded history (changesWith: together " +
+                            "in how many of its commitsLoaded, strength 0 to 1, commits touching many files counting for less) and its " +
+                            "tests or code by naming convention (pairedByName). Changing together is not depending, and pairing is not " +
+                            "coverage. Without an open window it scans the project and counts the latest 40 commits.",
                         ReadOnly = true,
                         Idempotent = true,
                         OpenWorld = false,

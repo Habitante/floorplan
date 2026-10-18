@@ -74,6 +74,21 @@ public static class FileClassifier
         return stem.Length > 4 && (stem.EndsWith("Test", StringComparison.Ordinal) || stem.EndsWith("Tests", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// The name a test is named for, by the same conventions: "x" for test_x.py, x_test.go,
+    /// x.test.ts, x.spec.js, XTest.cs or XTests.cs. Null for a name that follows none of them.
+    /// </summary>
+    public static string? TestedName(string path)
+    {
+        var stem = System.IO.Path.GetFileNameWithoutExtension(path);
+        if (stem.Length > 5 && stem.StartsWith("test_", StringComparison.OrdinalIgnoreCase)) return stem[5..];
+        foreach (var suffix in TestSuffixes)
+            if (stem.Length > suffix.Length && stem.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return stem[..^suffix.Length];
+        if (stem.Length > 5 && stem.EndsWith("Tests", StringComparison.Ordinal)) return stem[..^5];
+        if (stem.Length > 4 && stem.EndsWith("Test", StringComparison.Ordinal)) return stem[..^4];
+        return null;
+    }
+
     /// <summary>Kinds whose physical lines are counted.</summary>
     public static bool CountsLines(FileKind kind) => kind is FileKind.Code or FileKind.Test or FileKind.Docs or FileKind.Data;
 

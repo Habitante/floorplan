@@ -125,6 +125,29 @@ export interface BoardView {
   theme: 'light' | 'dark'
 }
 
+/** A file that changes in the same commits as another (FloorPlan.Core's Partner). */
+export interface Partner {
+  path: string
+  /** Loaded commits that touched both. */
+  together: number
+  /** Loaded commits that touched the partner. */
+  commits: number
+  /** 0 to 1, with commits touching many files counting for less. */
+  strength: number
+  /** Shared commits, newest first, abbreviated; at most a few. */
+  shared: string[]
+}
+
+/** What changes with a file over the loaded history, and what its name pairs it with (FloorPlan.Core's FileRelations). */
+export interface FileRelations {
+  path: string
+  /** Loaded commits that touched the file. */
+  commits: number
+  changesWith: Partner[]
+  /** For code, its tests by naming convention; for a test, the code it is named for. */
+  pairedByName: string[]
+}
+
 /** One thing an agent points at: a path of the scan, optionally a file's lines. */
 export interface PointerItem {
   path: string

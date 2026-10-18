@@ -4,6 +4,7 @@ import { connect, send } from './bridge'
 import { App } from './components'
 import { loadIconFonts } from './icons'
 import { zoomOut } from './map-controller'
+import { watchRelations } from './relations'
 import { applyScan, finding, model, openReader, reader, receiveSince, selected, selectedCommit, status, theme } from './state'
 import './styles.css'
 
@@ -59,6 +60,7 @@ connect(message => {
   }
 })
 reportBoard()
+watchRelations()
 
 // The human's own input tells the host they are here; view changes do not, since refreshes and
 // agents make them too. Chromium repeats pointer events when content changes under a resting

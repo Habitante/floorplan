@@ -18,6 +18,8 @@ export const GLYPHS = {
   pointer: '',
   locate: '',
   search: '',
+  related: '',
+  test: '',
   since: '',
 } as const
 

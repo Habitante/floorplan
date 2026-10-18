@@ -11,6 +11,7 @@ import { Icon, Tag } from './icons'
 import { MapController } from './map-controller'
 import { ancestry, contains, displayName, KINDS, LINES_AREA, weightOf, type Model, type Node } from './model'
 import { changeCounts, changeLabel, changeMark, changeWords, describeChange } from './changes'
+import { RelatedFiles } from './related'
 import { price } from './render'
 import { names, onSince, people, regionName, sinceRange } from './since'
 import {
@@ -621,6 +622,8 @@ function NodePanel({ model: m, node }: { model: Model; node: Node }) {
           </ul>
         </>
       )}
+
+      {node.isFile && <RelatedFiles model={m} node={node} compact={false} />}
 
       {commits.length > 0 && (
         <>

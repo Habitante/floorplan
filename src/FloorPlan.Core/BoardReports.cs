@@ -126,6 +126,12 @@ public sealed record SummaryReport
     public int? UncommittedNotListed { get; init; }
     public IReadOnlyList<NodeReport>? Largest { get; init; }
     public IReadOnlyList<CommitReport>? RecentCommits { get; init; }
+    /// <summary>For a file: the loaded commits that touched it, over the whole loaded history.</summary>
+    public int? CommitsLoaded { get; init; }
+    /// <summary>For a file: the files that change in the same commits, strongest first. "Changes with", not "depends on".</summary>
+    public IReadOnlyList<Partner>? ChangesWith { get; init; }
+    /// <summary>For code, its tests by naming convention; for a test, the code it is named for. Not coverage.</summary>
+    public IReadOnlyList<string>? PairedByName { get; init; }
     /// <summary>For the whole project: what landed since the human last saw it.</summary>
     public SinceReport? SinceLastSeen { get; init; }
 }
@@ -154,6 +160,7 @@ public static class BoardReports
 {
     public const int LargestLimit = 12;
     public const int CommitLimit = 10;
+    public const int PartnerLimit = 8;
     public const int UncommittedLimit = 25;
     public const int SelectedTextLimit = 4000;
     /// <summary>A window idle this long may no longer show what the human means.</summary>
@@ -320,8 +327,12 @@ public static class BoardReports
         }
 
         var measures = Node(node, null);
+        var relations = ChangesWith.For(index, node, PartnerLimit);
         return new SummaryReport
         {
+            CommitsLoaded = relations?.Commits,
+            ChangesWith = relations is { ChangesWith.Count: > 0 } ? relations.ChangesWith : null,
+            PairedByName = relations is { PairedByName.Count: > 0 } ? relations.PairedByName : null,
             Window = fromWindow,
             Project = index.Root,
             Path = node.Path,

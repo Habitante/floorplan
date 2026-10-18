@@ -36,6 +36,8 @@ export interface Scene {
   pulse: number
   /** New files that just arrived on the map, with their emphasis, 1 on arrival fading to 0. */
   arrivals: ReadonlyMap<Node, number>
+  /** Files that change with the selected one, with their outline weight from 1 to 3. */
+  related: ReadonlyMap<Node, number>
   /** Labels are skipped while animating. */
   labels: boolean
 }
@@ -264,9 +266,20 @@ function drawOverlays(ctx: CanvasRenderingContext2D, scene: Scene, view: View) {
       ring(item, width, 1, scene.palette.surface)
     }
   }
+  // What changes with the selection: ink, as the relation belongs to it, in hairlines that are
+  // fainter for weaker ties, so the selection's heavier outline stays the one that stands out.
+  for (const [node, weight] of scene.related) {
+    if (node === scene.selected) continue
+    ctx.globalAlpha = RELATED_ALPHA[weight] ?? RELATED_ALPHA[1]
+    outline(drawn(node), 1, scene.palette.ink)
+  }
+  ctx.globalAlpha = 1
   outline(drawn(scene.hover), 1, scene.palette.ink)
   outline(drawn(scene.selected), 2, scene.palette.ink)
 }
+
+/** Opacity of the ink outline for each weight of a relation; the selection itself is drawn at full ink. */
+const RELATED_ALPHA = [0, 0.4, 0.65, 0.9]
 
 /** Truncates text with an ellipsis to fit the width. */
 function fit(ctx: CanvasRenderingContext2D, text: string, width: number): string {

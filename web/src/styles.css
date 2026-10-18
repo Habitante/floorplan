@@ -689,6 +689,22 @@ button.row:hover { background: var(--hover); }
 .chip.change { color: var(--change); }
 .chip.change[aria-pressed="true"] { background: var(--change); color: var(--surface); border-color: var(--change); }
 
+/* A selected file's tests and the files that change with it */
+
+.related { display: grid; gap: 3px; margin-top: 8px; font-size: 12px; }
+.related-line { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; align-items: baseline; }
+.related-line > .icon { color: var(--ink-3); }
+.related-items { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
+.related-item { display: inline-flex; align-items: baseline; gap: 3px; min-width: 0; }
+.related-name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.related-name:hover { text-decoration: underline; }
+.related-count { color: var(--ink-3); white-space: nowrap; border-radius: 4px; padding: 0 2px; }
+.related-count:hover { background: var(--hover); color: var(--ink); }
+.related-more { color: var(--ink-3); }
+.related-more:hover { color: var(--ink); }
+.related-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.related-row .related-count { font-size: 12px; }
+
 .reader { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
 .reader-code { flex: 1; min-height: 0; margin: 10px -16px 0; border-top: 1px solid var(--line); }
 .reader-diff-label { color: var(--ink-2); }

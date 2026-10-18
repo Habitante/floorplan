@@ -7,6 +7,7 @@ import { GLYPHS, iconFontsLoaded, type IconName } from './glyphs'
 import { hitTest, layoutTree, type Item } from './layout'
 import { contains, displayName, LINES_AREA, weightOf, type Footprint, type Model, type Node } from './model'
 import { readPalette, type Palette } from './palette'
+import { relatedNodes, relations } from './relations'
 import { drawScene, IDENTITY, type View } from './render'
 import type { Rect } from './squarify'
 import {
@@ -76,7 +77,7 @@ export class MapController {
       shown = m
     }))
     this.cleanup.push(effect(() => {
-      void lens.value, activity.value, hovered.value, selected.value, touched.value, pointers.value, iconFontsLoaded.value
+      void lens.value, activity.value, hovered.value, selected.value, touched.value, pointers.value, relations.value, iconFontsLoaded.value
       if (lens.value === 'age') void age.value
       this.request()
     }))
@@ -199,6 +200,7 @@ export class MapController {
       pointed: pointedNodes(m, pointing),
       pulse: emphasis,
       arrivals: arrived,
+      related: relatedNodes(m, relations.peek()),
       labels: this.animation === null,
     }, this.width, this.height, this.dpr, view)
 

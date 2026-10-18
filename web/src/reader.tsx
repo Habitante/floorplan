@@ -24,6 +24,7 @@ import * as format from './format'
 import { Icon } from './icons'
 import { displayName, type Model } from './model'
 import { pointedLines } from './board'
+import { RelatedFiles } from './related'
 import { activity, NO_LINES, pointers, range, reader, readerFocus, readerLines, type ReaderTarget } from './state'
 
 /** GDScript reads well as Python once its own declaration words count as keywords. */
@@ -295,6 +296,7 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
         {m.scan.project.git && counts && <span><Icon name="commit" label="Commits in range" />{format.int(counts[node.index])}</span>}
         {modified && <span title={format.dateLong(modified)}><Icon name="clock" label="Modified" />{format.ago(modified)}</span>}
       </div>
+      <RelatedFiles model={m} node={node} compact />
       <div class="chips" role="group" aria-label="Show">
         <button class="chip" aria-pressed={commit === null} onClick={() => show(null)}><Icon name="fileLines" />File</button>
         {src.change && (

@@ -220,6 +220,16 @@ sealed class MainForm : Form, IBoardSurface
                 else _ = ReadDiffAsync(request, path, commit);
                 break;
             }
+            case "relations":
+            {
+                // What changes with a selected file, from the scan on screen; quick enough to answer at once.
+                var root = message.RootElement;
+                int request = root.TryGetProperty("request", out var r) && r.TryGetInt32(out int id) ? id : 0;
+                string? path = root.TryGetProperty("path", out var p) ? p.GetString() : null;
+                var relations = index is { } shown && shown.Get(path) is { IsFile: true } file ? ChangesWith.For(shown, file) : null;
+                Post(new { type = "relations", request, relations });
+                break;
+            }
         }
     }
 
