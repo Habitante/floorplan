@@ -226,12 +226,13 @@ sealed class MainForm : Form, IBoardSurface
                 else _ = ReadDiffAsync(request, path, commit);
                 break;
             }
-            case "outline":
+            case "outline" or "lineHistory":
             {
                 var root = message.RootElement;
                 int request = root.TryGetProperty("request", out var r) && r.TryGetInt32(out int id) ? id : 0;
                 string? path = root.TryGetProperty("path", out var p) ? p.GetString() : null;
-                _ = ReadOutlineAsync(request, path);
+                if (typeProperty.GetString() == "outline") _ = ReadOutlineAsync(request, path);
+                else _ = ReadLineHistoryAsync(request, path);
                 break;
             }
             case "relations":
@@ -394,6 +395,21 @@ sealed class MainForm : Form, IBoardSurface
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             Post(new { type = "outline", request, error = e.Message });
+        }
+    }
+
+    /// <summary>Which lines of a file each loaded commit changed, for the map inside the file.</summary>
+    async Task ReadLineHistoryAsync(int request, string? path)
+    {
+        try
+        {
+            if (!TryResolve(path, out _) || lastScan is not { Project.Git: true } scan) { Post(new { type = "lineHistory", request, error = "No history for this file" }); return; }
+            var history = await LineHistory.ForAsync(git, scan.Project.Root, path!, CancellationToken.None);
+            Post(new { type = "lineHistory", request, history });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or GitUnavailableException)
+        {
+            Post(new { type = "lineHistory", request, error = e.Message });
         }
     }
 

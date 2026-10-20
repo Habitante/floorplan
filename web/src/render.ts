@@ -49,11 +49,11 @@ export interface Scene {
   labels: boolean
 }
 
-const FONT = '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif'
+export const FONT = '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif'
 /** Edge of a new file's corner mark, in screen pixels. */
-const CORNER = 14
-const DARK_TEXT = '#0b0b0b'
-const LIGHT_TEXT = '#ffffff'
+export const CORNER = 14
+export const DARK_TEXT = '#0b0b0b'
+export const LIGHT_TEXT = '#ffffff'
 
 /**
  * Kind fills with its full colour. Activity and age fill with the warm ramp, and leave what
@@ -101,7 +101,7 @@ export function price(node: Node, footprint: Footprint, short: boolean): PriceTa
 
 const GLYPH_GAP = 3
 
-function tagWidth(ctx: CanvasRenderingContext2D, tag: PriceTag, size: number): number {
+export function tagWidth(ctx: CanvasRenderingContext2D, tag: PriceTag, size: number): number {
   ctx.font = `${size}px ${FONT}`
   let width = ctx.measureText(tag.text).width
   if (tag.lines) {
@@ -111,7 +111,7 @@ function tagWidth(ctx: CanvasRenderingContext2D, tag: PriceTag, size: number): n
   return width
 }
 
-function drawTag(ctx: CanvasRenderingContext2D, tag: PriceTag, x: number, y: number, size: number) {
+export function drawTag(ctx: CanvasRenderingContext2D, tag: PriceTag, x: number, y: number, size: number) {
   if (tag.lines) {
     ctx.font = `${size - 1}px ${ICON_FONT}`
     ctx.fillText(GLYPHS.lines, x, y)
@@ -331,7 +331,7 @@ function drawOverlays(ctx: CanvasRenderingContext2D, scene: Scene, view: View) {
 const RELATED_ALPHA = [0, 0.4, 0.65, 0.9]
 
 /** Truncates text with an ellipsis to fit the width. */
-function fit(ctx: CanvasRenderingContext2D, text: string, width: number): string {
+export function fit(ctx: CanvasRenderingContext2D, text: string, width: number): string {
   if (width <= 0) return ''
   if (ctx.measureText(text).width <= width) return text
   let lo = 0

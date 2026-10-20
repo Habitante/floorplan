@@ -16,7 +16,7 @@ import { RelatedFiles } from './related'
 import { price } from './render'
 import { names, onSince, people, regionName, sinceRange } from './since'
 import {
-  activity, age, description, dismissSince, finding, focus, footprint, hasSystems, lens, model, openReader, pointers, range, reader, readerFocus, reveal, selected,
+  activity, age, description, dismissSince, finding, focus, footprint, hasSystems, inside, lens, model, openReader, pointers, range, reader, readerFocus, reveal, selected,
   selectedCommit, selectedSystem, since, status, toggleSince, zoomTo, type Pointer,
 } from './state'
 import type { FileKind, PointerItem, Tally } from './types'
@@ -37,6 +37,7 @@ function TopBar() {
   const m = model.value
   const s = status.value
   const f = focus.value
+  const file = inside.value
   const info = useSignal(false)
   const project = m?.scan.project
 
@@ -65,11 +66,17 @@ function TopBar() {
           {ancestry(f).map((n, i) => (
             <>
               {i > 0 && <span class="crumb-sep">/</span>}
-              <button class="crumb" aria-current={n === f ? 'location' : undefined} onClick={() => zoomTo(n)}>
+              <button class="crumb" aria-current={n === f && !file ? 'location' : undefined} onClick={() => zoomTo(n)}>
                 {displayName(m, n)}
               </button>
             </>
           ))}
+          {file && (
+            <>
+              <span class="crumb-sep">/</span>
+              <button class="crumb" aria-current="location" title="Its parts, by lines">{file.name}</button>
+            </>
+          )}
         </nav>
       )}
       {project?.branch && (

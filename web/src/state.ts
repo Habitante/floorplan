@@ -24,6 +24,16 @@ export const model = signal<Model | null>(null)
 export const status = signal<Status>({ state: 'idle' })
 /** The folder the map is zoomed into. */
 export const focus = signal<Node | null>(null)
+/** The file the map is zoomed into, showing its parts; its folder stays the focus. */
+export const inside = signal<Node | null>(null)
+/** The part of that file picked on the map: its outline id, or its lines when it has none. */
+export interface PartChoice {
+  path: string
+  id: string | null
+  from: number
+  to: number
+}
+export const selectedPart = signal<PartChoice | null>(null)
 export const selected = signal<Node | null>(null)
 export const hovered = signal<Node | null>(null)
 /** Index into model.commits (oldest first), or the uncommitted working changes. */
@@ -123,9 +133,10 @@ interface StoredRange {
   to?: string
 }
 
-/** Per-project view: the zoomed folder and the range. */
+/** Per-project view: the zoomed folder, a file zoomed into, and the range. */
 interface StoredView extends StoredRange {
   focus?: string
+  inside?: string
 }
 
 function storeRange(m: Model, [from, to]: readonly [number, number]): StoredRange {
@@ -150,11 +161,11 @@ effect(() => {
   const m = model.value
   const f = focus.value
   if (!m || !f) return
-  const view: StoredView = { focus: f.path, ...storeRange(m, range.value) }
+  const view: StoredView = { focus: f.path, inside: inside.value?.path, ...storeRange(m, range.value) }
   store(viewKey(m), JSON.stringify(view))
 })
 
-function restoredView(m: Model): { focus: Node; range: [number, number] } | null {
+function restoredView(m: Model): { focus: Node; inside: Node | null; range: [number, number] } | null {
   let view: StoredView
   try {
     view = JSON.parse(localStorage.getItem(`map.${viewKey(m)}`) ?? 'null') as StoredView
@@ -163,7 +174,8 @@ function restoredView(m: Model): { focus: Node; range: [number, number] } | null
   }
   if (!view) return null
   const node = view.focus !== undefined ? m.byPath.get(view.focus) : undefined
-  return { focus: node && !node.isFile ? node : m.root, range: resolveRange(m, view) }
+  const file = view.inside !== undefined ? m.byPath.get(view.inside) : undefined
+  return { focus: node && !node.isFile ? node : m.root, inside: file?.isFile ? file : null, range: resolveRange(m, view) }
 }
 
 /** The range in place before the briefing's was applied, to switch back to. */
@@ -215,6 +227,9 @@ export function applyScan(scan: Scan, briefing?: SinceReport, report: Descriptio
   batch(() => {
     model.value = next
     focus.value = carry(focus.value) ?? restored?.focus ?? next.root
+    const file = carry(inside.value) ?? restored?.inside ?? null
+    inside.value = file?.isFile ? file : null
+    if (!inside.value) selectedPart.value = null
     selected.value = carry(selected.value)
     hovered.value = null
     selectedCommit.value = nextCommit
@@ -278,13 +293,32 @@ export function dismissSince() {
 /** Zoom to a folder (a file zooms to its folder). */
 export function zoomTo(node: Node | null) {
   if (!node) return
-  focus.value = node.isFile ? node.parent ?? node : node
+  batch(() => {
+    inside.value = null
+    selectedPart.value = null
+    focus.value = node.isFile ? node.parent ?? node : node
+  })
+}
+
+/** Zoom into a file: the map shows its parts, inside its folder. */
+export function zoomInto(file: Node) {
+  if (!file.isFile) return
+  batch(() => {
+    focus.value = file.parent ?? file
+    inside.value = file
+    selectedPart.value = null
+    selected.value = file
+  })
 }
 
 /** Opens a file in the reader and selects it on the map. */
 export function openReader(node: Node, commit: number | 'working' | null = null) {
   if (!node.isFile) return
   batch(() => {
+    if (inside.value && inside.value !== node) {
+      inside.value = null
+      selectedPart.value = null
+    }
     showOnMap(node)
     selected.value = node
     reader.value = { node, commit }
@@ -316,6 +350,8 @@ export function jumpTo(node: Node) {
   }
   batch(() => {
     focus.value = view
+    inside.value = null
+    selectedPart.value = null
     if (node.isFile) {
       const commit = selectedCommit.peek()
       openReader(node, commit !== null && touched.peek()?.[node.index] ? commit : null)
@@ -330,10 +366,14 @@ export function jumpTo(node: Node) {
 /** Select a node and make sure the map shows it. */
 export function reveal(node: Node) {
   const f = focus.value
-  let inside = false
-  for (let n: Node | null = node; n; n = n.parent) if (n === f) inside = true
+  let shown = false
+  for (let n: Node | null = node; n; n = n.parent) if (n === f) shown = true
   batch(() => {
-    if (!inside) zoomTo(node.parent ?? node)
+    if (!shown) zoomTo(node.parent ?? node)
+    else if (inside.value && inside.value !== node) {
+      inside.value = null
+      selectedPart.value = null
+    }
     selected.value = node
     selectedCommit.value = null
   })

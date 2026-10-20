@@ -2,7 +2,7 @@ import { batch, effect } from '@preact/signals'
 import { applyPointer, boardView, commonFolder, pointedNodes } from './board'
 import { send } from './bridge'
 import {
-  focus, footprint, lens, model, openReader, pointers, range, reader, readerFocus, readerLines, reveal, selected, selectedCommit,
+  focus, footprint, inside, lens, model, openReader, pointers, range, reader, readerFocus, readerLines, reveal, selected, selectedCommit,
   theme, zoomTo, type Pointer,
 } from './state'
 import type { PointerItem } from './types'
@@ -44,7 +44,8 @@ export function reportBoard(delay = 150): () => void {
     const m = model.value
     if (!m) return
     const view = boardView(m, {
-      focus: focus.value,
+      // Zoomed into a file, the file is the view.
+      focus: inside.value ?? focus.value,
       selected: selected.value,
       commit: selectedCommit.value,
       range: range.value,

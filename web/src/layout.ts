@@ -1,8 +1,16 @@
 import type { Node } from './model'
 import { squarify, type Rect } from './squarify'
 
-export interface Item extends Rect {
-  node: Node
+/** What the layout needs of a tree: names to order ties by, children, and which nodes are leaves. */
+export interface Tree<N> {
+  readonly name: string
+  readonly isFile: boolean
+  readonly children: readonly N[]
+}
+
+/** A laid-out node: a file or folder of the map, or a part of a file. */
+export interface Item<N = Node> extends Rect {
+  node: N
   /** Depth below the focused folder. */
   depth: number
   /** True when this folder's children were laid out inside it. */
@@ -21,9 +29,9 @@ const MIN_INNER = 3
  * The gutter around an item, by its depth below the focus. Gaps carry the hierarchy: wide
  * between regions, narrower between subfolders, a hairline between files.
  */
-function gutter(node: Node, depth: number): number {
+function gutter(leaf: boolean, depth: number): number {
   if (depth === 1) return 6
-  if (node.isFile) return 1
+  if (leaf) return 1
   return depth === 2 ? 3 : 2
 }
 
@@ -32,11 +40,11 @@ function gutter(node: Node, depth: number): number {
  * drawing in order paints children over their folder and hit-testing in reverse finds the
  * deepest visible item. Folders too small to hold their children are left closed.
  */
-export function layoutTree(focus: Node, bounds: Rect, weight: (n: Node) => number): Item[] {
-  const items: Item[] = []
+export function layoutTree<N extends Tree<N>>(focus: N, bounds: Rect, weight: (n: N) => number): Item<N>[] {
+  const items: Item<N>[] = []
 
-  const visit = (node: Node, r: Rect, depth: number) => {
-    const item: Item = { ...r, node, depth, open: false, header: 0 }
+  const visit = (node: N, r: Rect, depth: number) => {
+    const item: Item<N> = { ...r, node, depth, open: false, header: 0 }
     items.push(item)
     if (node.isFile) return
 
@@ -67,7 +75,7 @@ export function layoutTree(focus: Node, bounds: Rect, weight: (n: Node) => numbe
     children.forEach((c, i) => {
       const r = rects[i]
       // Half the gutter on each side, kept small enough that tiny items stay visible.
-      const g = Math.min(gutter(c.child, depth + 1) / 2, r.w / 6, r.h / 6)
+      const g = Math.min(gutter(c.child.isFile, depth + 1) / 2, r.w / 6, r.h / 6)
       visit(c.child, { x: r.x + g, y: r.y + g, w: r.w - 2 * g, h: r.h - 2 * g }, depth + 1)
     })
   }
@@ -88,7 +96,7 @@ export function nearestItem(items: readonly Item[], node: Node): Item | undefine
 }
 
 /** Deepest item under the point. */
-export function hitTest(items: readonly Item[], x: number, y: number): Item | undefined {
+export function hitTest<N>(items: readonly Item<N>[], x: number, y: number): Item<N> | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i]
     if (x >= it.x && y >= it.y && x < it.x + it.w && y < it.y + it.h) return it

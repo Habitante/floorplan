@@ -39,7 +39,10 @@ static class McpCommand
         "a colour per system, with its code of one to three letters on the regions it holds and on files that belong to another " +
         "system than their folder. The strip along the bottom is the commit history, and its highlighted " +
         "range is what activity and age count; a chip in the row above it says what landed since the human was last there " +
-        "and, when clicked, switches the range to those commits. The reader beside the map shows a file or a diff. A file opens " +
+        "and, when clicked, switches the range to those commits. Double-clicking a file zooms the map into it: its parts " +
+        "(classes, functions, sections, and blocks of a kind of data declaration) as rectangles sized by lines, with the same " +
+        "fills and outlines, where under kind code is blue and data grey; get_selection then reports the file as the zoom. " +
+        "The reader beside the map shows a file or a diff. A file opens " +
         "as its skeleton: declarations, data and comments in view, bodies folded to a chip with their size, and a document " +
         "folded to its headings; lines you point at open by themselves. A violet bar in its margin marks lines changed since " +
         "the last commit, a wedge where lines were deleted, and a folded body shows its changes as +added −removed.\n\n" +

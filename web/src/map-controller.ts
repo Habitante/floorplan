@@ -1,5 +1,6 @@
 import { effect } from '@preact/signals'
-import { pointedNodes, pulse } from './board'
+import { batch } from '@preact/signals'
+import { pointedLines, pointedNodes, pulse } from './board'
 import { send } from './bridge'
 import { arrivedPaths, changeCounts, changeWords, describeChange } from './changes'
 import * as format from './format'
@@ -7,12 +8,18 @@ import { GLYPHS, iconFontsLoaded, type IconName } from './glyphs'
 import { hitTest, layoutTree, type Item } from './layout'
 import { contains, displayName, LINES_AREA, weightOf, type Footprint, type Model, type Node } from './model'
 import { readPalette, type Palette } from './palette'
-import { systemCodes, systemOfFile } from './meaning'
+import { systemCodes, systemOfFile, systemSlot } from './meaning'
+import {
+  findPart, largestParts, lineHistoryOf, loadOutline, outlineOf, partActivity, partHistory, partsLoaded, partTimes, treeOf,
+  type Part, type PartHistory, type PartTree,
+} from './parts'
+import { drawParts } from './render-parts'
 import { relatedNodes, relations } from './relations'
 import { drawScene, IDENTITY, type View } from './render'
 import type { Rect } from './squarify'
 import {
-  activity, age, description, focus, footprint, hovered, isolated, lens, model, openReader, pointers, reader, selected, selectedCommit, systemMap, touched, zoomTo,
+  activity, age, description, focus, footprint, hovered, inside, isolated, lens, model, openReader, pointers, range, reader, readerFocus, selected,
+  selectedCommit, selectedPart, systemMap, touched, zoomInto, zoomTo,
 } from './state'
 
 const ANIMATION_MS = 260
@@ -32,7 +39,13 @@ export class MapController {
   private palette: Palette
   private items: Item[] = []
   private itemByNode = new Map<Node, Item>()
-  private laidOut: { model: Model; focus: Node; footprint: Footprint; width: number; height: number } | null = null
+  private laidOut: { model: Model; focus: Node; footprint: Footprint; tree: PartTree | null; width: number; height: number } | null = null
+  /** Zoomed into a file: its parts, laid out over the whole map. */
+  private parts: { file: Node; tree: PartTree; items: Item<Part>[] } | null = null
+  private hoveredPart: Part | null = null
+  private measured: { tree: PartTree; history: unknown; model: Model; value: PartHistory } | null = null
+  /** The node the tooltip is for and where, to fill in parts that arrive later. */
+  private tipAt: { node: Node; x: number; y: number } | null = null
   private width = 0
   private height = 0
   private dpr = 1
@@ -65,7 +78,16 @@ export class MapController {
     scheme.addEventListener('change', onScheme)
     this.cleanup.push(() => scheme.removeEventListener('change', onScheme))
 
-    this.cleanup.push(effect(() => this.relayout(model.value, focus.value, footprint.value)))
+    this.cleanup.push(effect(() => {
+      void inside.value, partsLoaded.value
+      this.relayout(model.value, focus.value, footprint.value)
+    }))
+    // A tooltip shows a file's largest parts once its outline arrives.
+    this.cleanup.push(effect(() => {
+      void partsLoaded.value
+      const at = this.tipAt
+      if (at && !this.tip.hidden && !this.parts) this.showTip(at.node, { clientX: at.x, clientY: at.y } as MouseEvent)
+    }))
     // A new file pulses once when a refresh of the same project brings it, unless motion is reduced.
     let shown: Model | null = null
     this.cleanup.push(effect(() => {
@@ -79,6 +101,7 @@ export class MapController {
     }))
     this.cleanup.push(effect(() => {
       void lens.value, activity.value, hovered.value, selected.value, touched.value, pointers.value, relations.value, iconFontsLoaded.value
+      void selectedPart.value, range.value
       void isolated.value, lens.value === 'systems' && systemMap.value
       if (lens.value === 'age') void age.value
       this.request()
@@ -130,17 +153,36 @@ export class MapController {
       this.request()
       return
     }
+    // Zoomed into a file, its parts are shown once its outline is in; one without parts is left.
+    const file = inside.peek()
+    const outline = file ? outlineOf(file) : null
+    const tree = file && outline && outline.symbols.length > 0 ? treeOf(file, outline) : null
+    if (file && (outline === null || outline?.symbols.length === 0)) queueMicrotask(() => { if (inside.peek() === file) inside.value = null })
+
     const before = this.laidOut
-    if (before && before.model === m && before.focus === f && before.footprint === fp &&
+    if (before && before.model === m && before.focus === f && before.footprint === fp && before.tree === tree &&
         before.width === this.width && before.height === this.height) return
 
+    const bounds = { x: 0, y: 0, w: this.width, h: this.height }
     const previousItems = this.items
-    this.items = layoutTree(f, { x: 0, y: 0, w: this.width, h: this.height }, weightOf(fp))
+    const previousParts = this.parts
+    this.items = layoutTree(f, bounds, weightOf(fp))
     this.itemByNode = new Map(this.items.map(i => [i.node, i]))
-    this.laidOut = { model: m, focus: f, footprint: fp, width: this.width, height: this.height }
+    this.parts = file && tree ? { file, tree, items: layoutTree(tree.root, bounds, p => p.lines) } : null
+    if (!this.parts) this.hoveredPart = null
+    this.laidOut = { model: m, focus: f, footprint: fp, tree, width: this.width, height: this.height }
 
     this.animation = null
-    if (before && before.model === m && before.footprint === fp && before.focus !== f && !this.reducedMotion.matches) {
+    const now = performance.now()
+    if (before && before.model === m && !this.reducedMotion.matches && !previousParts && this.parts) {
+      // Into a file: its parts grow out of its rectangle.
+      const from = previousItems.find(i => i.node === this.parts!.file)
+      if (from) this.animation = { mode: 'in', from, start: now }
+    } else if (before && before.model === m && !this.reducedMotion.matches && previousParts && !this.parts) {
+      // Out of a file: the folder shrinks back to it.
+      const from = this.itemByNode.get(previousParts.file)
+      if (from) this.animation = { mode: 'out', from, start: now }
+    } else if (before && before.model === m && before.footprint === fp && before.focus !== f && !this.parts && !this.reducedMotion.matches) {
       if (contains(before.focus, f)) {
         const from = nearest(new Map(previousItems.map(i => [i.node, i])), f)
         if (from) this.animation = { mode: 'in', from, start: performance.now() }
@@ -187,6 +229,11 @@ export class MapController {
       if (node) arrived.set(node, (1 - t) ** 2)
       else this.arrivals.delete(path)
     }
+    if (this.parts) {
+      this.drawParts(m, view, emphasis)
+      if (this.animation || emphasis > 0) this.request()
+      return
+    }
     drawScene(this.ctx, {
       model: m,
       items: this.items,
@@ -216,13 +263,79 @@ export class MapController {
     }
   }
 
+  private drawParts(m: Model, view: View, emphasis: number) {
+    const { file, tree, items } = this.parts!
+    const history = this.historyOf(m, file, tree)
+    const [from, to] = range.peek()
+    const fill = lens.peek()
+    const ages = fill === 'age' ? age.peek() : null
+    const times = history && ages ? partTimes(history, m, to) : null
+    const system = fill === 'systems' ? systemMap.peek()?.[file.index] ?? -1 : -1
+    const choice = selectedPart.peek()
+    drawParts(this.ctx, {
+      items,
+      palette: this.palette,
+      lens: fill,
+      fileKind: file.kind ?? 'code',
+      systemColor: system >= 0 ? this.palette.systems[systemSlot(system)] : null,
+      git: m.scan.project.git,
+      activity: history ? partActivity(history, from, to) : null,
+      times: times?.times ?? null,
+      ever: times?.ever ?? null,
+      asOf: ages?.asOf ?? 0,
+      olderThanLoaded: ages?.olderThanLoaded ?? false,
+      change: history?.change ?? null,
+      hover: this.hoveredPart,
+      selected: choice?.path === file.path ? findPart(tree, choice) : null,
+      pointed: pointedLines(pointers.peek(), file.path),
+      pulse: emphasis,
+      labels: this.animation === null,
+    }, this.width, this.height, this.dpr, view)
+  }
+
+  /** The parts' commits and uncommitted changes, once the file's line history is in. */
+  private historyOf(m: Model, file: Node, tree: PartTree): PartHistory | null {
+    const change = file.src.change
+    const fresh = change === 'untracked' || change === 'added' || change === 'renamed'
+    const lines = lineHistoryOf(m, file)
+    if (lines === undefined && !fresh) return null
+    const known = this.measured
+    if (known && known.tree === tree && known.history === lines && known.model === m) return known.value
+    const value = partHistory(tree, lines ?? null, m, fresh)
+    this.measured = { tree, history: lines, model: m, value }
+    return value
+  }
+
+  private partAt(e: MouseEvent): Part | null {
+    if (this.animation || !this.parts) return null
+    const r = this.canvas.getBoundingClientRect()
+    return hitTest(this.parts.items, e.clientX - r.left, e.clientY - r.top)?.node ?? null
+  }
+
+  /** Zooms into a file when it has parts to show. */
+  private enter(file: Node) {
+    loadOutline(file).then(outline => {
+      if (outline && outline.symbols.length > 0 && model.peek()?.byPath.get(file.path) === file) zoomInto(file)
+    })
+  }
+
   private nodeAt(e: MouseEvent): Node | null {
-    if (this.animation) return null
+    if (this.animation || this.parts) return null
     const r = this.canvas.getBoundingClientRect()
     return hitTest(this.items, e.clientX - r.left, e.clientY - r.top)?.node ?? null
   }
 
   private onMove(e: PointerEvent) {
+    if (this.parts) {
+      const part = this.partAt(e)
+      if (part !== this.hoveredPart) {
+        this.hoveredPart = part
+        this.request()
+      }
+      if (part && part !== this.parts.tree.root) this.showPartTip(this.parts.file, part, e)
+      else this.hideTip()
+      return
+    }
     const node = this.nodeAt(e)
     if (hovered.peek() !== node) hovered.value = node
     if (node) this.showTip(node, e)
@@ -231,10 +344,26 @@ export class MapController {
 
   private clearHover() {
     hovered.value = null
+    if (this.hoveredPart) {
+      this.hoveredPart = null
+      this.request()
+    }
     this.hideTip()
   }
 
   private onClick(e: MouseEvent) {
+    if (this.parts) {
+      // A part is read where it is in its file.
+      const part = this.partAt(e)
+      const file = this.parts.file
+      if (!part || part === this.parts.tree.root) return
+      batch(() => {
+        selectedPart.value = { path: file.path, id: part.id, from: part.from, to: part.to }
+        readerFocus.value = { path: file.path, from: part.from, to: part.to }
+        openReader(file)
+      })
+      return
+    }
     const node = this.nodeAt(e)
     if (!node) return
     if (node.isFile) {
@@ -252,7 +381,8 @@ export class MapController {
   private onDoubleClick(e: MouseEvent) {
     const node = this.nodeAt(e)
     if (!node) return
-    if (!node.isFile && node !== focus.peek()) zoomTo(node)
+    if (node.isFile) this.enter(node)
+    else if (node !== focus.peek()) zoomTo(node)
   }
 
   private onWheel(e: WheelEvent) {
@@ -267,6 +397,11 @@ export class MapController {
     const under = this.nodeAt(e)
     const f = focus.peek()
     if (!under || !f) return
+    // A file in the folder on view opens into its parts.
+    if (under.isFile && under.parent === f) {
+      this.enter(under)
+      return
+    }
     // Step one level towards the folder under the pointer.
     let step: Node | null = under.isFile ? under.parent : under
     while (step && step.parent !== f) step = step.parent
@@ -276,6 +411,7 @@ export class MapController {
   private showTip(node: Node, e: MouseEvent) {
     const m = model.peek()
     if (!m) return
+    this.tipAt = { node, x: e.clientX, y: e.clientY }
     const counts = activity.peek()
     const parts: (string | [IconName, string])[] = []
     if (!node.isFile) parts.push(['file', format.int(node.files)])
@@ -318,7 +454,40 @@ export class MapController {
       line.textContent = text
       this.tip.append(line)
     }
+    // A file's largest parts, once its outline is in.
+    const outline = node.isFile ? outlineOf(node) : null
+    const largest = outline ? largestParts(treeOf(node, outline)) : []
+    if (largest.length > 0) this.tip.append(partsLine(largest))
+    this.place(e)
+  }
 
+  private showPartTip(file: Node, part: Part, e: MouseEvent) {
+    const m = model.peek()
+    if (!m) return
+    this.tipAt = null
+    const parts: (string | [IconName, string])[] = [['lines', format.int(part.lines)], part.from === part.to ? `line ${part.from}` : `lines ${part.from}–${part.to}`]
+    const history = this.parts && this.historyOf(m, file, this.parts.tree)
+    const [from, to] = range.peek()
+    if (m.scan.project.git && history) parts.push(['commit', format.int(partActivity(history, from, to)[part.index])])
+    const last = history && lens.peek() === 'age' ? partTimes(history, m, to).times[part.index] : 0
+    if (last > 0) parts.push(['clock', format.ago(format.fromUnix(last))])
+    parts.push(part.kind === 'top' ? 'comments and imports' : part.kind)
+    const title = document.createElement('div')
+    title.className = 'tip-path'
+    title.textContent = `${file.name} › ${part.id ?? part.name}`
+    this.tip.replaceChildren(title, priceLine(parts))
+    const change = history?.change[part.index] ?? 0
+    if (change > 0) {
+      const line = document.createElement('div')
+      line.className = 'tip-change'
+      line.textContent = change === 2 ? 'New, uncommitted' : 'Changed, uncommitted'
+      this.tip.append(line)
+    }
+    if (this.parts && !part.isFile) this.tip.append(partsLine(largestParts({ root: part, parts: this.parts.tree.parts.filter(p => within(part, p)) })))
+    this.place(e)
+  }
+
+  private place(e: MouseEvent) {
     this.tip.hidden = false
     const host = this.host.getBoundingClientRect()
     const tw = this.tip.offsetWidth
@@ -332,10 +501,59 @@ export class MapController {
 
   private hideTip() {
     this.tip.hidden = true
+    this.tipAt = null
   }
 }
 
+/** Is a part inside another? */
+function within(outer: Part, inner: Part): boolean {
+  for (let p = inner.parent; p; p = p.parent) if (p === outer) return true
+  return false
+}
+
+/** The measurements line of a tooltip: words and glyphs with numbers, between dots. */
+function priceLine(parts: (string | [IconName, string])[]): HTMLElement {
+  const price = document.createElement('div')
+  price.className = 'tip-price num'
+  parts.forEach((part, i) => {
+    if (i > 0) price.append(' · ')
+    if (typeof part === 'string') {
+      price.append(part)
+    } else {
+      const icon = document.createElement('span')
+      icon.className = 'icon'
+      icon.textContent = GLYPHS[part[0]]
+      price.append(icon, part[1])
+    }
+  })
+  return price
+}
+
+/** A file's or a part's largest parts, each with its lines. */
+function partsLine(parts: readonly Part[]): HTMLElement {
+  const line = document.createElement('div')
+  line.className = 'tip-parts num'
+  parts.forEach((part, i) => {
+    if (i > 0) line.append(' · ')
+    const icon = document.createElement('span')
+    icon.className = 'icon'
+    icon.textContent = GLYPHS.lines
+    line.append(`${part.name} `, icon, format.int(part.lines))
+  })
+  return line
+}
+
 export function zoomOut() {
+  // Out of a file first, back to its folder with the file selected.
+  const file = inside.peek()
+  if (file) {
+    batch(() => {
+      inside.value = null
+      selectedPart.value = null
+      selected.value = file
+    })
+    return
+  }
   const f = focus.peek()
   if (f?.parent) {
     selected.value = f

@@ -443,6 +443,7 @@ button:focus-visible, canvas:focus-visible, [tabindex]:focus-visible {
 .tip .tip-price { color: var(--ink-2); margin-top: 2px; }
 .tip .tip-note { color: var(--ink-3); margin-top: 2px; }
 .tip .tip-change { color: var(--change); margin-top: 2px; }
+.tip .tip-parts { color: var(--ink-2); margin-top: 2px; overflow-wrap: anywhere; }
 
 
 /* Empty, scanning and error states */
