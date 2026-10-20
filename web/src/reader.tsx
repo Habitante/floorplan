@@ -1,6 +1,6 @@
 import { javascript } from '@codemirror/lang-javascript'
 import { markdown } from '@codemirror/lang-markdown'
-import { HighlightStyle, StreamLanguage, syntaxHighlighting, type StreamParser } from '@codemirror/language'
+import { HighlightStyle, StreamLanguage, syntaxHighlighting, unfoldAll, type StreamParser } from '@codemirror/language'
 import { c, cpp, csharp, dart, java, kotlin, shader } from '@codemirror/legacy-modes/mode/clike'
 import { css } from '@codemirror/legacy-modes/mode/css'
 import { go } from '@codemirror/legacy-modes/mode/go'
@@ -18,6 +18,7 @@ import { unifiedMergeView } from '@codemirror/merge'
 import { Compartment, EditorState, RangeSetBuilder, type Extension, type Text } from '@codemirror/state'
 import { Decoration, EditorView, highlightSpecialChars, lineNumbers } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
+import { signal } from '@preact/signals'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { request } from './bridge'
 import * as format from './format'
@@ -25,7 +26,9 @@ import { Icon } from './icons'
 import { displayName, type Model } from './model'
 import { pointedLines } from './board'
 import { RelatedFiles } from './related'
+import { changeMarks, foldSkeleton, lineChanges, outlineFolding, pointedLines as pointedFacet, revealLines, type FileOutline, type LineChange } from './skeleton'
 import { activity, NO_LINES, pointers, range, reader, readerFocus, readerLines, type ReaderTarget } from './state'
+import type { WorkingChange } from './types'
 
 /** GDScript reads well as Python once its own declaration words count as keywords. */
 const GDSCRIPT_WORDS = new Set([
@@ -178,7 +181,7 @@ function selectedText(view: EditorView): { lines: [number, number]; text: string
 const pointedLine = Decoration.line({ class: 'cm-pointed' })
 
 /** Marks the lines agents point at. */
-function lineHighlights(ranges: readonly [number, number][]): Extension {
+function lineHighlights(ranges: readonly (readonly [number, number])[]): Extension {
   return EditorView.decorations.of(view => {
     const doc = view.state.doc
     const lines = new Set<number>()
@@ -189,15 +192,42 @@ function lineHighlights(ranges: readonly [number, number][]): Extension {
   })
 }
 
+/** Agents' lines: highlighted, kept out of folds and marked on the overview strip. */
+const pointed = (ranges: readonly (readonly [number, number])[]): Extension => [lineHighlights(ranges), pointedFacet.of(ranges)]
+
 type Content =
   | { state: 'loading' }
   | { state: 'error'; message: string }
   | { state: 'binary' }
-  | { state: 'file'; text: string; truncated: boolean }
+  | { state: 'file'; text: string; truncated: boolean; outline: FileOutline | null; changes: LineChange[] }
   | { state: 'diff'; before: string; after: string; truncated: boolean }
 
 interface FileReply { text?: string; binary?: boolean; truncated?: boolean; error?: string }
 interface DiffReply { before?: string | null; after?: string | null; binary?: boolean; truncated?: boolean; error?: string }
+interface OutlineReply { outline?: FileOutline | null; error?: string }
+
+/** Files open as skeletons until the human asks for the whole file; the choice holds for the session. */
+const skeletonView = signal(true)
+
+/** A file with its outline and what changed since the last commit: a modified file is read with its committed text. */
+async function loadFile(path: string, change: WorkingChange | undefined): Promise<Content> {
+  const outline = request<OutlineReply>({ type: 'outline', path }).then(r => r.outline ?? null, () => null)
+  if (change === 'modified') {
+    const [r, o] = await Promise.all([request<DiffReply>({ type: 'readDiff', path, commit: 'working' }), outline])
+    if (!r.error) {
+      if (r.binary) return { state: 'binary' }
+      const text = r.after ?? ''
+      return { state: 'file', text, truncated: !!r.truncated, outline: o, changes: r.truncated ? [] : lineChanges(r.before ?? '', text) }
+    }
+  }
+  const [r, o] = await Promise.all([request<FileReply>({ type: 'readFile', path }), outline])
+  if (r.error) return { state: 'error', message: r.error }
+  if (r.binary) return { state: 'binary' }
+  const text = r.text ?? ''
+  // New at this path, a rename included: every line is new.
+  const fresh = change === 'untracked' || change === 'added' || change === 'renamed'
+  return { state: 'file', text, truncated: !!r.truncated, outline: o, changes: fresh && !r.truncated ? lineChanges('', text) : [] }
+}
 
 export function Reader({ model: m, target }: { model: Model; target: ReaderTarget }) {
   const host = useRef<HTMLDivElement>(null)
@@ -223,19 +253,19 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
           r.error ? { state: 'error', message: r.error }
           : r.binary ? { state: 'binary' }
           : { state: 'diff', before: r.before ?? '', after: r.after ?? '', truncated: !!r.truncated })
-      : request<FileReply>({ type: 'readFile', path: node.path }).then((r): Content =>
-          r.error ? { state: 'error', message: r.error }
-          : r.binary ? { state: 'binary' }
-          : { state: 'file', text: r.text ?? '', truncated: !!r.truncated })
+      : loadFile(node.path, node.src.change)
     reply.then(c => live && setContent(c), (e: Error) => live && setContent({ state: 'error', message: e.message }))
     return () => { live = false }
-  }, [node.path, commit, sha, node.src.modified, node.src.bytes])
+  }, [node.path, commit, sha, node.src.modified, node.src.bytes, node.src.change])
 
   // One read-only editor per loaded content.
   useEffect(() => {
     if (!host.current || (content.state !== 'file' && content.state !== 'diff')) return
-    const extensions: Extension[] = [base, languageFor(node.path), highlights.current.of(lineHighlights(ranges))]
-    if (content.state === 'diff') {
+    const extensions: Extension[] = [base, languageFor(node.path), highlights.current.of(pointed(ranges))]
+    if (content.state === 'file') {
+      extensions.push(changeMarks(content.changes))
+      if (content.outline?.folds.length) extensions.push(outlineFolding(content.outline, content.changes))
+    } else {
       extensions.push(unifiedMergeView({
         original: content.before,
         mergeControls: false,
@@ -249,6 +279,10 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
       state: EditorState.create({ doc: content.state === 'diff' ? content.after : content.text, extensions }),
     })
     view.current = editor
+    if (content.state === 'file' && content.outline && skeletonView.value) {
+      const focus = readerFocus.value
+      foldSkeleton(editor, content.outline, focus?.path === node.path ? [...ranges, [focus.from, focus.to] as const] : ranges)
+    }
     const stop = trackLines(editor)
     return () => {
       stop()
@@ -258,13 +292,17 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
   }, [content])
 
   useEffect(() => {
-    view.current?.dispatch({ effects: highlights.current.reconfigure(lineHighlights(ranges)) })
+    const editor = view.current
+    if (!editor) return
+    editor.dispatch({ effects: highlights.current.reconfigure(pointed(ranges)) })
+    revealLines(editor, ranges)
   }, [rangesKey])
 
   // Bring an agent's lines into view once the file is shown.
   useEffect(() => {
     const editor = view.current
     if (!editor || !focusLines || focusLines.path !== node.path || !workingFile) return
+    revealLines(editor, [[focusLines.from, focusLines.to]])
     const doc = editor.state.doc
     const line = doc.line(Math.min(Math.max(1, focusLines.from), lastLine(doc)))
     editor.dispatch({ effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 48 }) })
@@ -280,11 +318,25 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
   const counts = activity.value
   const src = node.src
   const modified = src.modified ? new Date(src.modified) : null
+  const outline = content.state === 'file' && content.outline?.folds.length ? content.outline : null
+  const toggleSkeleton = () => {
+    skeletonView.value = !skeletonView.value
+    const editor = view.current
+    if (!editor || !outline) return
+    if (skeletonView.value) foldSkeleton(editor, outline, ranges)
+    else unfoldAll(editor)
+  }
 
   return (
     <aside class="side reader" aria-label="Reader">
       <div class="side-head">
         <h2 class="side-title"><Icon name="fileLines" />{displayName(m, node)}</h2>
+        {outline && (
+          <button class="icon-button" aria-label={skeletonView.value ? 'Show the whole file' : 'Fold to the skeleton'}
+            title={skeletonView.value ? 'Show the whole file' : 'Fold to the skeleton'} onClick={toggleSkeleton}>
+            <Icon name={skeletonView.value ? 'unfold' : 'fold'} />
+          </button>
+        )}
         <button class="icon-button" aria-label="Close reader" title="Close (Esc)" onClick={() => (reader.value = null)}>
           <Icon name="close" />
         </button>

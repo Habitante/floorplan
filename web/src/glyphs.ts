@@ -21,6 +21,10 @@ export const GLYPHS = {
   related: '',
   test: '',
   since: '',
+  fold: '',
+  unfold: '',
+  folded: '',
+  unfolded: '',
 } as const
 
 export type IconName = keyof typeof GLYPHS

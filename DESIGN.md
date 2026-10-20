@@ -87,7 +87,7 @@ Use the reference projects under `ref/` for ideas or small algorithms, keeping l
 
 - `FloorPlan.Core` references no UI, WebView2 or MCP packages, so the window, headless scans, tests and the MCP server share it unchanged.
 - The front end is embedded in the executable and served to WebView2 from `https://floorplan.invalid/` with a restrictive content security policy. Navigation elsewhere and new windows are refused.
-- The front end has no filesystem or process access. The bridge exposes a small set of validated operations (open project, rescan, read file, read diff, report the view). Every repository path, from the front end or from an agent, must name an entry of the last scan inside the project root.
+- The front end has no filesystem or process access. The bridge exposes a small set of validated operations (open project, rescan, read file, read diff, outline a file, report the view). Every repository path, from the front end or from an agent, must name an entry of the last scan inside the project root.
 - Scans and Git queries run off the UI thread with bounded concurrency, report progress and can be cancelled.
 - Layout calculation is separate from drawing and interaction.
 - Parsing runs in Core, read-only, on demand and one file at a time. The agent's server outlines a file for `summary` itself, so a window's interface never waits on it. The native library loads only from FloorPlan's own folders, never through the system's search path, since FloorPlan runs inside folders it does not trust.

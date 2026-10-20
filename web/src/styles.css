@@ -749,3 +749,30 @@ button.row:hover { background: var(--hover); }
 .reader .cm-deletedLineGutter { background: var(--diff-del-text) !important; }
 .reader .cm-collapsedLines { background: var(--frame-folder); color: var(--ink-3); font: 12px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
 .reader .cm-pointed { background: color-mix(in srgb, var(--pointer) 14%, transparent); box-shadow: inset 3px 0 0 var(--pointer); }
+
+/* The skeleton: folds show their size, and their uncommitted changes in violet */
+.reader .cm-fold-placeholder {
+  margin-left: 10px; padding: 0 6px; border-radius: 3px; background: var(--frame-folder); color: var(--ink-3);
+  font: 11px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; cursor: pointer; white-space: nowrap;
+}
+.reader .cm-fold-placeholder:hover { color: var(--ink); }
+.reader .cm-fold-change { margin-left: 6px; color: var(--change); font-weight: 600; }
+.reader .cm-foldGutter .cm-gutterElement { padding: 0 3px; cursor: pointer; }
+.reader .cm-fold-chevron { font-size: 8px; min-width: 0; color: var(--ink-3); opacity: 0; transition: opacity 120ms; }
+.reader .cm-gutters:hover .cm-fold-chevron { opacity: 1; }
+.reader .cm-fold-chevron:hover { color: var(--ink); }
+
+/* Uncommitted changes in the margin: a bar beside changed lines, a wedge where lines were deleted */
+.reader .cm-change-gutter .cm-gutterElement { position: relative; width: 4px; padding: 0; }
+.reader .cm-change-mark { position: absolute; inset: 0 1px 0 0; }
+.reader .cm-change-mark.changed { background: var(--change); }
+.reader .cm-change-mark.deleted::before, .reader .cm-change-mark.deleted-after::after {
+  content: ""; position: absolute; left: 0; border: 4px solid transparent; border-left: 5px solid var(--change);
+}
+.reader .cm-change-mark.deleted::before { top: -4px; }
+.reader .cm-change-mark.deleted-after::after { bottom: -4px; }
+
+/* The overview strip along the scrollbar: where the file's changes and agents' pointers are */
+.reader .cm-overview { position: absolute; top: 0; right: 0; bottom: 0; width: 6px; pointer-events: none; z-index: 3; }
+.reader .cm-overview .mark { position: absolute; left: 0; right: 0; min-height: 3px; pointer-events: auto; cursor: pointer; background: var(--change); }
+.reader .cm-overview .mark.pointer { background: var(--pointer); }

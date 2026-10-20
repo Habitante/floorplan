@@ -226,6 +226,14 @@ sealed class MainForm : Form, IBoardSurface
                 else _ = ReadDiffAsync(request, path, commit);
                 break;
             }
+            case "outline":
+            {
+                var root = message.RootElement;
+                int request = root.TryGetProperty("request", out var r) && r.TryGetInt32(out int id) ? id : 0;
+                string? path = root.TryGetProperty("path", out var p) ? p.GetString() : null;
+                _ = ReadOutlineAsync(request, path);
+                break;
+            }
             case "relations":
             {
                 // What changes with a selected file, from the scan on screen; quick enough to answer at once.
@@ -371,6 +379,21 @@ sealed class MainForm : Form, IBoardSurface
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             Post(new { type = "file", request, error = e.Message });
+        }
+    }
+
+    /// <summary>A file's outline for the reader's skeleton, parsed off the interface thread.</summary>
+    async Task ReadOutlineAsync(int request, string? path)
+    {
+        try
+        {
+            if (!TryResolve(path, out var full)) { Post(new { type = "outline", request, error = "Not a file in this project" }); return; }
+            var (outline, note) = await Outlines.ReadAsync(full, path!, CancellationToken.None);
+            Post(new { type = "outline", request, outline, note });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Post(new { type = "outline", request, error = e.Message });
         }
     }
 

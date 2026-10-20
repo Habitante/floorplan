@@ -39,7 +39,10 @@ static class McpCommand
         "a colour per system, with its code of one to three letters on the regions it holds and on files that belong to another " +
         "system than their folder. The strip along the bottom is the commit history, and its highlighted " +
         "range is what activity and age count; a chip in the row above it says what landed since the human was last there " +
-        "and, when clicked, switches the range to those commits. The reader beside the map shows a file or a diff.\n\n" +
+        "and, when clicked, switches the range to those commits. The reader beside the map shows a file or a diff. A file opens " +
+        "as its skeleton: declarations, data and comments in view, bodies folded to a chip with their size, and a document " +
+        "folded to its headings; lines you point at open by themselves. A violet bar in its margin marks lines changed since " +
+        "the last commit, a wedge where lines were deleted, and a folded body shows its changes as +added −removed.\n\n" +
         "When the human says \"this\", \"here\" or \"these\", call get_selection. If it reports stale, the human has not " +
         "touched the window for a while: confirm what they mean. sinceLastSeen in a reply is what landed while the human " +
         "was away: commits since the HEAD they last saw, the regions those touched, and who made them (agents appear as " +

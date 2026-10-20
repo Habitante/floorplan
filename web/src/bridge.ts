@@ -13,7 +13,7 @@ export type HostMessage =
   | { type: 'since'; since: SinceReport }
   | { type: 'error'; message: string; path?: string }
   | { type: 'idle' }
-  | { type: 'file' | 'diff'; request: number }
+  | { type: 'file' | 'diff' | 'outline'; request: number }
   | { type: 'openReader'; path: string; commit: string | null }
   /** An agent points at paths of the scan (validated by the host); no items clears its pointer. */
   | { type: 'pointer'; agent: string; caption: string; items: PointerItem[]; at: number; reveal: boolean }
@@ -26,6 +26,8 @@ export type AppMessage =
   | { type: 'rendered'; files: number; items: number; ms: number }
   | { type: 'readFile'; path: string }
   | { type: 'readDiff'; path: string; commit: string }
+  /** A file's outline: what it declares and the lines its skeleton folds. */
+  | { type: 'outline'; path: string }
   /** What changes with a file; the host answers from the scan on screen. */
   | { type: 'relations'; path: string }
   | { type: 'board'; view: BoardView }
