@@ -14,6 +14,22 @@ static class AppData
     /// <summary>Smoke runs keep their own browser data, apart from any open window.</summary>
     public static string SmokeWebView => Path.Combine(Folder, "WebView2-smoke");
     public static string LogFile => Path.Combine(Folder, "floorplan.log");
+    /// <summary>Where agents' project descriptions live by default, one per project folder name.</summary>
+    public static string Descriptions => Path.Combine(Folder, "descriptions");
+
+    /// <summary>
+    /// Where a project's description belongs: the file its settings name, else the default place
+    /// for its folder name. Never inside the project.
+    /// </summary>
+    public static string DescriptionPath(string root)
+    {
+        if (LoadSettings().For(root).Description is { Length: > 0 } named) return named;
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(root));
+        return Path.Combine(Descriptions, $"{name}.floorplan.json");
+    }
+
+    /// <summary>The project's description file, or null when there is none yet.</summary>
+    public static string? DescriptionFile(string root) => DescriptionPath(root) is var file && File.Exists(file) ? file : null;
     static string SettingsFile => Path.Combine(Folder, "settings.json");
 
     /// <summary>An optional licensed icon font the user placed in FloorPlan's data folder.</summary>
@@ -139,4 +155,6 @@ sealed class ProjectSettings
     /// <summary>HEAD when the human was last present in a window on the project: where "since I was last here" starts.</summary>
     public string? SeenHead { get; set; }
     public DateTimeOffset? SeenAt { get; set; }
+    /// <summary>The project's description, written by an agent and kept outside the project.</summary>
+    public string? Description { get; set; }
 }

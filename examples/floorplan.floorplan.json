@@ -1,0 +1,73 @@
+{
+  "floorplan": 1,
+  "project": "floorplan",
+  "written": {
+    "at": "2026-10-18",
+    "by": "Claude Opus 5.5, in a FloorPlan session",
+    "head": "7e456cb",
+    "from": ["DESIGN.md", "README.md"]
+  },
+  "summary": "FloorPlan, a visual development board for a repository and the agents working on it: one Windows executable with a C# core, a WebView2 window drawing a TypeScript front end, and an MCP server that lets coding agents see and point at what the human sees.",
+  "systems": [
+    {
+      "id": "core",
+      "name": "Core",
+      "code": "CO",
+      "role": "The scan, Git history, aggregation, files that change together, project descriptions, and the board's model and tools that the window and the agents' server share. References no UI, WebView2 or MCP package.",
+      "status": "active",
+      "basis": "declared",
+      "paths": ["src/FloorPlan.Core/**", "tests/FloorPlan.Core.Tests/**"],
+      "docs": ["DESIGN.md", "DISCOVERY.md"]
+    },
+    {
+      "id": "window",
+      "name": "The window",
+      "code": "WIN",
+      "role": "floorplan.exe as a window: the WinForms host for WebView2, the bridge's validated messages, live refresh, settings, and the scan and smoke modes.",
+      "status": "active",
+      "basis": "declared",
+      "paths": ["src/FloorPlan.App/**", "FloorPlan.slnx", "Directory.Build.props"],
+      "docs": ["README.md"]
+    },
+    {
+      "id": "board",
+      "name": "The board server",
+      "code": "MCP",
+      "role": "The MCP server agents launch, floorplan.exe mcp: get_selection, show, summary and open, talking to every open window over its named pipe.",
+      "status": "active",
+      "basis": "declared",
+      "paths": [
+        "src/FloorPlan.App/McpCommand.cs",
+        "src/FloorPlan.Core/Board.cs", "src/FloorPlan.Core/BoardChannel.cs", "src/FloorPlan.Core/BoardReports.cs", "src/FloorPlan.Core/BoardTools.cs",
+        "tests/FloorPlan.Core.Tests/Board*.cs"
+      ],
+      "docs": ["DESIGN.md"]
+    },
+    {
+      "id": "front-end",
+      "name": "The front end",
+      "code": "UI",
+      "role": "TypeScript in WebView2: the canvas map and its layout, the inspector, the reader, the history strip and the finder. It has no filesystem or process access.",
+      "status": "active",
+      "basis": "declared",
+      "paths": ["web/**"],
+      "docs": ["DESIGN.md"]
+    }
+  ],
+  "direction": [
+    {
+      "text": "Milestone 4 draws project descriptions as named regions; skeletons and symbols (5) and meaning on symbols (6) follow.",
+      "systems": ["core", "front-end"],
+      "basis": "declared",
+      "docs": ["DESIGN.md"]
+    }
+  ],
+  "findings": [
+    {
+      "title": "A file's last commit is measured twice",
+      "text": "The Age lens measures it in the front end and agents' lastCommit in Core, with the same rule kept in step by hand.",
+      "basis": "observed",
+      "paths": ["web/src/activity.ts", "src/FloorPlan.Core/Board.cs"]
+    }
+  ]
+}

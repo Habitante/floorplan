@@ -31,6 +31,10 @@ sealed class MainForm : Form, IBoardSurface
     bool scanning;
     bool rescanPending;
     ProjectWatcher? watcher;
+    /// <summary>The project's description as last checked against the scan; null when it has none.</summary>
+    DescriptionReport? description;
+    FileSystemWatcher? descriptionWatcher;
+    string? descriptionPath;
     string? watchedRoot;
     ProjectIndex? index;
     readonly BoardState board = new();
@@ -101,6 +105,7 @@ sealed class MainForm : Form, IBoardSurface
     {
         scanCancellation?.Cancel();
         watcher?.Dispose();
+        descriptionWatcher?.Dispose();
         _ = boardServer?.DisposeAsync();
         base.OnFormClosed(e);
     }
@@ -126,7 +131,8 @@ sealed class MainForm : Form, IBoardSurface
         core.WebMessageReceived += OnWebMessage;
         core.AddWebResourceRequestedFilter(Origin + "*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnWebResourceRequested;
-        core.Navigate((DevUrl ?? Origin + "index.html") + (launch.Theme is { } theme ? $"?theme={theme}" : ""));
+        var query = string.Join("&", new[] { launch.Theme is { } theme ? $"theme={theme}" : null, launch.Fill is { } fill ? $"fill={fill}" : null }.OfType<string>());
+        core.Navigate((DevUrl ?? Origin + "index.html") + (query.Length > 0 ? "?" + query : ""));
     }
 
     static bool IsOwnUrl(string uri) =>
@@ -284,6 +290,9 @@ sealed class MainForm : Form, IBoardSurface
             // Opening a project briefs the human on what landed since they last saw it.
             bool opening = scan.Project.Root != boardRoot;
             var since = opening ? await BriefingAsync(scanned, OpeningMark(scan)) : null;
+            // The description is re-read and its anchors re-checked on every scan, so a broken one shows as stale.
+            var describedAt = launch.Description ?? AppData.DescriptionPath(scan.Project.Root);
+            var checkedDescription = File.Exists(describedAt) ? await Task.Run(() => Descriptions.Load(describedAt, scanned)) : null;
             if (cancellation.IsCancellationRequested) return;
             lastScan = scan;
             index = scanned;
@@ -292,8 +301,10 @@ sealed class MainForm : Form, IBoardSurface
             Text = $"{scan.Project.Name} — FloorPlan";
             ServeBoard(scan.Project.Root);
             if (opening) board.SinceLastSeen = since;
-            Post(new { type = "scan", scan, since });
+            description = checkedDescription;
+            Post(new { type = "scan", scan, since, description });
             Watch(scan);
+            WatchDescription(describedAt);
             if (quiet) AppData.Log($"refresh {scan.Project.DurationMs} ms · {scan.Tree.Files} files · {scan.Commits.Count} commits · {scan.Project.Changes} changes");
         }
         catch (OperationCanceledException) { }
@@ -435,6 +446,49 @@ sealed class MainForm : Form, IBoardSurface
         }
     }
 
+    /// <summary>
+    /// Watches the project's description file, which lives outside the project, so that an agent's
+    /// describe or a hand edit shows at once, checked against the scan on screen.
+    /// </summary>
+    void WatchDescription(string file)
+    {
+        if (descriptionWatcher is not null && string.Equals(descriptionPath, file, StringComparison.OrdinalIgnoreCase)) return;
+        descriptionWatcher?.Dispose();
+        descriptionWatcher = null;
+        descriptionPath = file;
+        try
+        {
+            var folder = Path.GetDirectoryName(file)!;
+            Directory.CreateDirectory(folder);
+            var watching = new FileSystemWatcher(folder, Path.GetFileName(file)) { NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size };
+            System.Threading.Timer? settle = null;
+            void Changed(object? sender, FileSystemEventArgs e)
+            {
+                // Writers replace the file in steps; read it once they are done.
+                settle?.Dispose();
+                settle = new System.Threading.Timer(_ => { if (!IsDisposed) BeginInvoke(() => ReloadDescription(file)); }, null, 250, Timeout.Infinite);
+            }
+            watching.Changed += Changed;
+            watching.Created += Changed;
+            watching.Deleted += Changed;
+            watching.Renamed += (sender, e) => Changed(sender, e);
+            watching.EnableRaisingEvents = true;
+            descriptionWatcher = watching;
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            AppData.Log($"watching the description {file} failed: {e.Message}");
+        }
+    }
+
+    void ReloadDescription(string file)
+    {
+        if (index is not { } shown || !string.Equals(descriptionPath, file, StringComparison.OrdinalIgnoreCase)) return;
+        description = File.Exists(file) ? Descriptions.Load(file, shown) : null;
+        Post(new { type = "description", description });
+        AppData.Log($"description reloaded: {description?.Description?.Systems.Count ?? 0} systems, {description?.Stale?.Count ?? 0} stale");
+    }
+
     void Post(object message)
     {
         if (web.CoreWebView2 is null || IsDisposed) return;
@@ -519,6 +573,7 @@ sealed class MainForm : Form, IBoardSurface
     }
 
     ProjectIndex? IBoardSurface.Index => index;
+    DescriptionReport? IBoardSurface.Description => description;
     BoardState IBoardSurface.State => board;
     bool IBoardSurface.Focused => ActiveForm == this;
 

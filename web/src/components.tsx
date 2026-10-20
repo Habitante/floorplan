@@ -11,12 +11,13 @@ import { Icon, Tag } from './icons'
 import { MapController } from './map-controller'
 import { ancestry, contains, displayName, KINDS, LINES_AREA, weightOf, type Model, type Node } from './model'
 import { changeCounts, changeLabel, changeMark, changeWords, describeChange } from './changes'
+import { DescriptionPanel, FileSystem, SystemLegend, SystemPanel } from './description'
 import { RelatedFiles } from './related'
 import { price } from './render'
 import { names, onSince, people, regionName, sinceRange } from './since'
 import {
-  activity, age, dismissSince, finding, focus, footprint, lens, model, openReader, pointers, range, reader, readerFocus, reveal, selected,
-  selectedCommit, since, status, toggleSince, zoomTo, type Pointer,
+  activity, age, description, dismissSince, finding, focus, footprint, hasSystems, lens, model, openReader, pointers, range, reader, readerFocus, reveal, selected,
+  selectedCommit, selectedSystem, since, status, toggleSince, zoomTo, type Pointer,
 } from './state'
 import type { FileKind, PointerItem, Tally } from './types'
 
@@ -88,7 +89,7 @@ function TopBar() {
           <Segmented
             label="Fill"
             value={lens.value}
-            options={[['activity', 'Activity'], ['age', 'Age'], ['kind', 'Kind']]}
+            options={[['activity', 'Activity'], ['age', 'Age'], ['kind', 'Kind'], ...(hasSystems.value ? [['systems', 'Systems'] as ['systems', string]] : [])]}
             onChange={v => (lens.value = v)}
           />
           <button class={s.refreshing ? 'icon-button busy' : 'icon-button'} title="Rescan (F5)" aria-label="Rescan" onClick={() => send({ type: 'rescan' })}>
@@ -194,7 +195,9 @@ function InfoPanel({ model: m, close }: { model: Model; close: () => void }) {
       <p><Icon name="lines" /> <b>Lines</b>: physical lines in code, test and documentation files, blank lines and comments included.</p>
       <p><b>Bytes</b>: size on disk. Data, scenes and binary files only take area here.</p>
       <h3>Fill</h3>
-      {lens.value === 'kind' ? (
+      {lens.value === 'systems' && description.value ? (
+        <SystemLegend report={description.value} />
+      ) : lens.value === 'kind' ? (
         <>
           <div class="legend">
             {swatch('--kind-code')}<span>Code</span>
@@ -527,6 +530,10 @@ function Inspector() {
   const c = selectedCommit.value
   if (c === 'working') return <WorkingPanel model={m} />
   if (c !== null && m.commits[c]) return <CommitPanel model={m} index={c} />
+  const report = description.value
+  const system = selectedSystem.value
+  if (report?.description && system !== null && report.description.systems[system]) return <SystemPanel model={m} report={report} index={system} />
+  if (report && lens.value === 'systems' && !selected.value) return <DescriptionPanel model={m} report={report} />
   return <NodePanel model={m} node={selected.value ?? focus.value ?? m.root} />
 }
 
@@ -583,6 +590,7 @@ function NodePanel({ model: m, node }: { model: Model; node: Node }) {
       </div>
       {src.note && <div class="note">{src.note}</div>}
       {src.change && <div class="note change"><Icon name="change" /> {describeChange(node)}</div>}
+      {node.isFile && <FileSystem node={node} />}
       {!node.isFile && <ChangedInside model={m} node={node} />}
       {!node.isFile && (src.unmeasured ?? 0) > 0 && <div class="note">{format.int(src.unmeasured!)} files without a measurement</div>}
 

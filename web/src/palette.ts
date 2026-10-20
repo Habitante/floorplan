@@ -20,6 +20,8 @@ export interface Palette {
   change: string
   /** Outline for agents' pointers. */
   pointer: string
+  /** The systems lens's five colours, by slot (see systemSlot). */
+  systems: string[]
   unsampled: CanvasPattern | string
 }
 
@@ -44,6 +46,7 @@ export function readPalette(ctx: CanvasRenderingContext2D): Palette {
     ground: kinds('ground'),
     change: v('--change'),
     pointer: v('--pointer'),
+    systems: [1, 2, 3, 4, 5].map(i => v(`--sys-${i}`)),
     unsampled: hatch(ctx, zero, v('--hatch')),
   }
 }

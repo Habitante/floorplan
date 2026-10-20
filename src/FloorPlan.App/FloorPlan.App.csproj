@@ -32,6 +32,11 @@
     <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
   </ItemGroup>
 
+  <!-- Prompts the board's server offers agents, also readable in the repository. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Prompts\*.md" LogicalName="prompts/%(Filename)%(Extension)" WithCulture="false" />
+  </ItemGroup>
+
   <!-- The front end is built with npm and embedded, so the executable is self-contained. -->
   <ItemGroup>
     <WebSource Include="$(WebDir)src\**\*;$(WebDir)index.html;$(WebDir)package.json;$(WebDir)vite.config.ts;$(WebDir)tsconfig.json" />

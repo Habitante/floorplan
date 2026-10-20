@@ -1,4 +1,4 @@
-import type { BoardView, PointerItem, Scan, SinceReport } from './types'
+import type { BoardView, DescriptionReport, PointerItem, Scan, SinceReport } from './types'
 
 export type HostMessage =
   | { type: 'scanning'; path: string }
@@ -6,7 +6,9 @@ export type HostMessage =
   | { type: 'refreshed' }
   | { type: 'progress'; phase: string; done: number; total: number }
   /** A briefing comes with the scan that opens a project. */
-  | { type: 'scan'; scan: Scan; since?: SinceReport }
+  | { type: 'scan'; scan: Scan; since?: SinceReport; description?: DescriptionReport | null }
+  /** The project's description changed on disk; checked against the scan on screen. */
+  | { type: 'description'; description: DescriptionReport | null }
   /** The human came back to an open window and commits had landed meanwhile. */
   | { type: 'since'; since: SinceReport }
   | { type: 'error'; message: string; path?: string }

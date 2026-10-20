@@ -7,6 +7,7 @@ sealed class FakeSurface(ProjectIndex? index) : IBoardSurface
     public ProjectIndex? Index { get; } = index;
     public BoardState State { get; } = new();
     public bool Focused { get; set; }
+    public DescriptionReport? Description { get; set; }
     public List<Pointer> Pointers { get; } = [];
     public bool Revealed { get; private set; }
     public int Raised { get; private set; }

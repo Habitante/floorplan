@@ -5,10 +5,14 @@ import { App } from './components'
 import { loadIconFonts } from './icons'
 import { zoomOut } from './map-controller'
 import { watchRelations } from './relations'
-import { applyScan, finding, model, openReader, reader, receiveSince, selected, selectedCommit, status, theme } from './state'
+import { applyScan, finding, lens, model, openReader, reader, receiveDescription, receiveSince, selected, selectedCommit, selectedSystem, status, theme } from './state'
 import './styles.css'
 
-const forced = new URLSearchParams(location.search).get('theme')
+const params = new URLSearchParams(location.search)
+const forced = params.get('theme')
+// A lens to start in, for checks of the window.
+const fill = params.get('fill')
+if (fill === 'activity' || fill === 'age' || fill === 'kind' || fill === 'systems') lens.value = fill
 if (forced === 'light' || forced === 'dark') document.documentElement.dataset.theme = forced
 const dark = matchMedia('(prefers-color-scheme: dark)')
 const followTheme = () => {
@@ -35,10 +39,13 @@ connect(message => {
       status.value = { ...status.peek(), state: 'scanning', phase: message.phase, done: message.done, total: message.total }
       break
     case 'scan':
-      applyScan(message.scan, message.since)
+      applyScan(message.scan, message.since, message.description ?? null)
       break
     case 'since':
       receiveSince(message.since)
+      break
+    case 'description':
+      receiveDescription(message.description)
       break
     case 'error':
       status.value = { state: 'error', message: message.message, path: message.path }
@@ -102,6 +109,7 @@ addEventListener('keydown', e => {
   } else if (e.key === 'Escape') {
     if (reader.peek()) reader.value = null
     else if (selectedCommit.peek() !== null) selectedCommit.value = null
+    else if (selectedSystem.peek() !== null) selectedSystem.value = null
     else selected.value = null
   }
 })

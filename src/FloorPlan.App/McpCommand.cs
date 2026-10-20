@@ -15,9 +15,13 @@ static class McpCommand
     const string ProjectParameter =
         "Which project: a folder name such as \"my-game\", or a path. Omit it for the window the human used last.";
 
-    // What the human sees, so agents can talk about the map in its own terms.
+    // How to use the board, and what the human sees, so agents can talk about the map in its own terms.
     const string Instructions =
-        "FloorPlan shows repositories as maps on the human's screen. A map is a treemap: one rectangle per file, nested in " +
+        "FloorPlan is a visual window onto the repository that you share with the human: a map of its files on their screen, " +
+        "which you can read through these tools and point at. Use it whenever you discuss the repository's shape, status, " +
+        "contents or changes, without being asked: point at what you mean with show instead of listing files in prose, and if " +
+        "no window shows the project, open it (it does not take the keyboard) and tell the human to have a look.\n\n" +
+        "A map is a treemap: one rectangle per file, nested in " +
         "its folders, with folder names in header strips; wider gutters and larger headers mark the top-level regions. Area " +
         "is a file's lines in code, tests and documentation (area: lines) or its size on disk (area: bytes). Fill shows " +
         "activity, age or kind. Activity and age share one warm ramp from red through orange to yellow, where more is " +
@@ -31,7 +35,9 @@ static class McpCommand
         "count as new), and region headers count new, modified and deleted files in violet (+2 ~1 −1); raspberry outlines " +
         "are agents' pointers, with their captions in the row under the map, which shows a caption's start; clicking it opens " +
         "the whole note with its paths. A selected file has a strong ink outline, and fainter ink outlines mark the files " +
-        "that change with it (summary gives them as changesWith). The strip along the bottom is the commit history, and its highlighted " +
+        "that change with it (summary gives them as changesWith). When the project has a description, fill can also be systems: " +
+        "a colour per system, with its code of one to three letters on the regions it holds and on files that belong to another " +
+        "system than their folder. The strip along the bottom is the commit history, and its highlighted " +
         "range is what activity and age count; a chip in the row above it says what landed since the human was last there " +
         "and, when clicked, switches the range to those commits. The reader beside the map shows a file or a diff.\n\n" +
         "When the human says \"this\", \"here\" or \"these\", call get_selection. If it reports stale, the human has not " +
@@ -39,10 +45,26 @@ static class McpCommand
         "was away: commits since the HEAD they last saw, the regions those touched, and who made them (agents appear as " +
         "co-authors). If the window showed it in the last few minutes, or no window is open, tell them in a line or two " +
         "before anything else. In a diff, line numbers count in the version named by lineNumbers and " +
-        "removed lines have none; rely on selectedText. Instead of listing files in prose, call show (\"path:480-492\" points " +
-        "at lines); at the end of a task, show the files you changed. Every tool takes an optional project and otherwise " +
-        "uses the window the human used last, so check the project in each reply. Call open only when the human wants to " +
-        "see something that no window shows.";
+        "removed lines have none; rely on selectedText. show points at files, folders and lines (\"path:480-492\"); at the " +
+        "end of a task, show the files you changed. Every tool takes an optional project and otherwise uses the window the " +
+        "human used last, so check the project in each reply.\n\n" +
+        "A project description says what the project's parts are for and where they live: its systems with the paths they " +
+        "own, where the project is heading, and findings worth knowing. Agents write it, FloorPlan checks it against the " +
+        "files, and the human sees it as the systems fill and in the side panel. Read it at the start of work on a project " +
+        "and before you explain where something is or how parts relate: a project's summary carries it in brief, " +
+        "get_description in full. Keep it current without being asked: when there is none, when summary reports it stale " +
+        "or with code in no system, and after any task of yours that added, moved or removed a part's files, refresh it " +
+        "with describe, following the describe-project prompt. Start from get_description, keep its ids, change what " +
+        "changed, and say so when you hand over. Rewrite one wholesale only when the human asks.";
+
+    /// <summary>The describe-project prompt, embedded from Prompts/describe-project.md.</summary>
+    static readonly Lazy<string> DescribePrompt = new(() =>
+    {
+        using var stream = typeof(McpCommand).Assembly.GetManifestResourceStream("prompts/describe-project.md")
+            ?? throw new InvalidOperationException("The describe-project prompt is not embedded");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    });
 
     public static int Run(string[] args)
     {
@@ -59,7 +81,8 @@ static class McpCommand
             new GitRunner(),
             root => new ScanOptions { IncludeUntracked = !AppData.LoadSettings().For(root).HideUntracked },
             root => Environment.ProcessPath is { } exe && NativeMethods.StartDetached(exe, [root], root),
-            root => AppData.LoadSettings().Seen(root));
+            root => AppData.LoadSettings().Seen(root),
+            AppData.DescriptionPath);
 
         var options = new McpServerOptions
         {
@@ -142,11 +165,60 @@ static class McpCommand
                         Title = "Open the map",
                         Description =
                             "Brings the FloorPlan window showing a project above other windows, without taking the keyboard from the " +
-                            "human, or opens one and waits until it has scanned. Only when the human wants to see something.",
+                            "human, or opens one and waits until it has scanned. Use it when you discuss the repository and no window " +
+                            "shows the project, then tell the human to look; while one is open, point with show instead.",
                         ReadOnly = false,
                         Destructive = false,
                         Idempotent = true,
                         OpenWorld = false,
+                    }),
+                McpServerTool.Create(
+                    async ([Description(ProjectParameter)] string? project = null, CancellationToken cancellationToken = default) =>
+                        Result(await tools.DescriptionAsync(project, cancellationToken)),
+                    new McpServerToolCreateOptions
+                    {
+                        Name = "get_description",
+                        Title = "The project's description",
+                        Description =
+                            "The project's description in full: its systems with the paths they own, its direction and findings, checked " +
+                            "against a fresh read-only scan. Also reports what no longer matches (stale), what each system holds, the " +
+                            "largest code no system names (unnamed), and where the description is kept, outside the project. Read it " +
+                            "before updating a description, or for a full briefing; a project's summary carries it in brief.",
+                        ReadOnly = true,
+                        Idempotent = true,
+                        OpenWorld = false,
+                    }),
+                McpServerTool.Create(
+                    async (
+                        [Description("The whole description as a JSON string, format 1: floorplan, project, written, summary, systems, direction, findings. The describe-project prompt explains each field.")] string description,
+                        [Description(ProjectParameter)] string? project = null,
+                        CancellationToken cancellationToken = default) =>
+                        Result(await tools.DescribeAsync(description, project, cancellationToken)),
+                    new McpServerToolCreateOptions
+                    {
+                        Name = "describe",
+                        Title = "Save the project's description",
+                        Description =
+                            "Checks a project description you wrote against a fresh read-only scan and saves it in FloorPlan's own data, " +
+                            "never in the project; open windows show it at once. Replies with problems (then nothing is saved), stale " +
+                            "anchors, what each system holds and the largest code no system names. Replaces the previous description, so " +
+                            "start from get_description. The describe-project prompt says how to write one. Use it on your own whenever " +
+                            "the description is missing or out of date, as after a task that added, moved or removed a part's files.",
+                        ReadOnly = false,
+                        Destructive = false,
+                        Idempotent = true,
+                        OpenWorld = false,
+                    }),
+            ],
+            PromptCollection =
+            [
+                McpServerPrompt.Create(
+                    () => DescribePrompt.Value,
+                    new McpServerPromptCreateOptions
+                    {
+                        Name = "describe-project",
+                        Title = "Describe this project for FloorPlan",
+                        Description = "How to write or refresh the project description that FloorPlan draws as named systems on its map.",
                     }),
             ],
         };

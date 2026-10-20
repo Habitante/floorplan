@@ -1,10 +1,11 @@
 import { batch, computed, effect, signal } from '@preact/signals'
 import { ages, countActivity, markCommit, markNodes } from './activity'
 import { buildModel, weightOf, type Footprint, type Model, type Node } from './model'
+import { systemMarks, systemsOf } from './meaning'
 import { onSince, sinceRange, sinceStart } from './since'
-import type { PointerItem, Scan, SinceReport } from './types'
+import type { DescriptionReport, PointerItem, Scan, SinceReport } from './types'
 
-export type Lens = 'activity' | 'age' | 'kind'
+export type Lens = 'activity' | 'age' | 'kind' | 'systems'
 
 export interface Status {
   state: 'idle' | 'scanning' | 'ready' | 'error'
@@ -72,7 +73,20 @@ export const range = signal<[number, number]>([0, 0])
 /** What landed while the human was away, as the host measured it; null once dismissed. */
 export const since = signal<SinceReport | null>(null)
 export const footprint = signal<Footprint>(stored('footprint', ['lines', 'bytes'], 'lines'))
-export const lens = signal<Lens>(stored('lens', ['activity', 'age', 'kind'], 'activity'))
+export const lens = signal<Lens>(stored('lens', ['activity', 'age', 'kind', 'systems'], 'activity'))
+
+/** The project's description as the host checked it against the scan; null when it has none. */
+export const description = signal<DescriptionReport | null>(null)
+/** The system picked in the inspector, by index into the description's systems: its files stay lit. */
+export const selectedSystem = signal<number | null>(null)
+
+/** Each node's system for the systems lens: a file's own, a folder's by weight. */
+export const systemMap = computed(() => (model.value ? systemsOf(model.value, description.value, footprint.value) : null))
+/** The picked system's files and folders, to dim the rest of the map. */
+export const isolated = computed(() => (model.value ? systemMarks(model.value, description.value, selectedSystem.value) : null))
+
+/** Whether the description names any systems, so the systems lens has something to show. */
+export const hasSystems = computed(() => (description.value?.description?.systems.length ?? 0) > 0)
 
 export const activity = computed(() => {
   const m = model.value
@@ -156,7 +170,7 @@ function restoredView(m: Model): { focus: Node; range: [number, number] } | null
 let beforeSince: StoredRange | null = null
 
 /** Applies a scan. A briefing comes with the scan that opens a project, and starts the range at its commits. */
-export function applyScan(scan: Scan, briefing?: SinceReport) {
+export function applyScan(scan: Scan, briefing?: SinceReport, report: DescriptionReport | null = null) {
   const previous = model.value
   const next = buildModel(scan)
   const same = previous?.scan.project.root === scan.project.root
@@ -214,7 +228,10 @@ export function applyScan(scan: Scan, briefing?: SinceReport) {
     if (!same) {
       pointers.value = []
       since.value = briefing ?? null
+      selectedSystem.value = null
     }
+    // Re-checked with every scan, so anchors that broke show as stale.
+    receiveDescription(report)
     status.value = { state: 'ready', path: scan.project.root }
   })
 }
@@ -225,6 +242,16 @@ export function applyScan(scan: Scan, briefing?: SinceReport) {
  */
 export function receiveSince(briefing: SinceReport) {
   since.value = briefing
+}
+
+/** A description checked against the scan on screen: with each scan, and when an agent saves a new one. */
+export function receiveDescription(report: DescriptionReport | null) {
+  batch(() => {
+    description.value = report
+    const systems = report?.description?.systems.length ?? 0
+    if (selectedSystem.value !== null && selectedSystem.value >= systems) selectedSystem.value = null
+    if (lens.value === 'systems' && systems === 0) lens.value = 'kind'
+  })
 }
 
 /** Switches between the commits since the human was last here and the range they had before. */

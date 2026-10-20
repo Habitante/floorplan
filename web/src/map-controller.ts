@@ -7,11 +7,12 @@ import { GLYPHS, iconFontsLoaded, type IconName } from './glyphs'
 import { hitTest, layoutTree, type Item } from './layout'
 import { contains, displayName, LINES_AREA, weightOf, type Footprint, type Model, type Node } from './model'
 import { readPalette, type Palette } from './palette'
+import { systemCodes, systemOfFile } from './meaning'
 import { relatedNodes, relations } from './relations'
 import { drawScene, IDENTITY, type View } from './render'
 import type { Rect } from './squarify'
 import {
-  activity, age, focus, footprint, hovered, lens, model, openReader, pointers, reader, selected, selectedCommit, touched, zoomTo,
+  activity, age, description, focus, footprint, hovered, isolated, lens, model, openReader, pointers, reader, selected, selectedCommit, systemMap, touched, zoomTo,
 } from './state'
 
 const ANIMATION_MS = 260
@@ -78,6 +79,7 @@ export class MapController {
     }))
     this.cleanup.push(effect(() => {
       void lens.value, activity.value, hovered.value, selected.value, touched.value, pointers.value, relations.value, iconFontsLoaded.value
+      void isolated.value, lens.value === 'systems' && systemMap.value
       if (lens.value === 'age') void age.value
       this.request()
     }))
@@ -197,6 +199,9 @@ export class MapController {
       hover: hovered.peek(),
       selected: selected.peek(),
       touched: touched.peek(),
+      systems: lens.peek() === 'systems' ? systemMap.peek() : null,
+      codes: lens.peek() === 'systems' ? systemCodes(description.peek()) : null,
+      isolated: isolated.peek(),
       pointed: pointedNodes(m, pointing),
       pulse: emphasis,
       arrivals: arrived,
@@ -303,7 +308,10 @@ export class MapController {
     this.tip.replaceChildren(title, price)
     const inside = node.isFile ? '' : changeWords(changeCounts(m, node))
     const change = node.isFile ? describeChange(node) : inside ? `${inside}, uncommitted` : null
-    for (const [text, className] of [[change, 'tip-change'], [src.note, 'tip-note']] as const) {
+    const report = description.peek()
+    const entry = systemOfFile(report, node)
+    const system = entry && report?.description ? `${entry.name} (${systemCodes(report)[report.description.systems.indexOf(entry)]})` : null
+    for (const [text, className] of [[change, 'tip-change'], [system, 'tip-note'], [src.note, 'tip-note']] as const) {
       if (!text) continue
       const line = document.createElement('div')
       line.className = className

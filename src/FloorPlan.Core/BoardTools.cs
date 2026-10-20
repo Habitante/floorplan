@@ -14,6 +14,8 @@ public interface IBoardSurface
     BoardState State { get; }
     /// <summary>True while the window has keyboard focus.</summary>
     bool Focused { get; }
+    /// <summary>The project's description as the window last checked it against its scan; null when it has none.</summary>
+    DescriptionReport? Description { get; }
     /// <summary>Shows an agent's pointer, replacing its previous one; no items clears it. Reveal also brings it into view.</summary>
     void Point(Pointer pointer, bool reveal);
     /// <summary>Brings the window above other windows without taking keyboard focus.</summary>
@@ -52,7 +54,7 @@ public static partial class BoardService
                     return BoardReply.Failure($"Not in the scanned project {index.Root}: {request.Path}");
                 var view = surface.State.View;
                 var window = index.Scan.Project.Git ? CommitWindow.For(index.Scan, view.Range) : null;
-                var summary = BoardReports.Summary(index, node, window, view.Area, fromWindow: true);
+                var summary = BoardReports.Summary(index, node, window, view.Area, fromWindow: true, surface.Description);
                 if (node.Path.Length == 0) summary = summary with { SinceLastSeen = BoardReports.Shown(surface.State.SinceLastSeen, now) };
                 return BoardReply.Success(summary);
             }
@@ -161,6 +163,24 @@ public static partial class BoardService
 
 public sealed record BoardToolResult(string Json, bool IsError);
 
+/// <summary>A project's description and its check, as get_description and describe report it.</summary>
+public sealed record DescriptionReply
+{
+    public required string Project { get; init; }
+    /// <summary>Where the description is kept: FloorPlan's own data, outside the project.</summary>
+    public required string File { get; init; }
+    /// <summary>For describe: whether it was saved.</summary>
+    public bool? Saved { get; init; }
+    public ProjectDescription? Description { get; init; }
+    public IReadOnlyList<string>? Problems { get; init; }
+    public IReadOnlyList<StaleAnchor>? Stale { get; init; }
+    /// <summary>What each system holds in this scan.</summary>
+    public IReadOnlyList<SystemDigest>? Systems { get; init; }
+    /// <summary>Code and tests that no system names yet, largest first.</summary>
+    public IReadOnlyList<UnnamedCode>? Unnamed { get; init; }
+    public string? Note { get; init; }
+}
+
 /// <summary>
 /// What <c>floorplan mcp</c> offers agents. One server serves every project: each call finds the
 /// open windows and asks the one for the named project, else the one an absolute path points
@@ -170,8 +190,10 @@ public sealed record BoardToolResult(string Json, bool IsError);
 /// <param name="folder">The agent's working folder: the base of relative paths and the default project.</param>
 /// <param name="startWindow">Starts a window on a folder; false when it could not.</param>
 /// <param name="seen">The HEAD the human last saw on a project root, for summaries without a window.</param>
+/// <param name="descriptionPath">Where a project root's description is kept, outside the project; null keeps none.</param>
 public sealed class BoardTools(
-    string folder, GitRunner git, Func<string, ScanOptions> scanOptions, Func<string, bool>? startWindow = null, Func<string, SeenMark?>? seen = null)
+    string folder, GitRunner git, Func<string, ScanOptions> scanOptions, Func<string, bool>? startWindow = null, Func<string, SeenMark?>? seen = null,
+    Func<string, string>? descriptionPath = null)
 {
     static readonly TimeSpan OpenTimeout = TimeSpan.FromSeconds(20);
 
@@ -234,7 +256,8 @@ public sealed class BoardTools(
             var index = new ProjectIndex(scan);
             if (index.Find(path ?? "", Folder) is not { } node) return Error($"Not in the scanned project {root}: {path}");
             var window = scan.Project.Git ? CommitWindow.For(scan, null) : null;
-            var report = BoardReports.Summary(index, node, window, "lines", fromWindow: false);
+            var description = descriptionPath?.Invoke(root) is { } file && File.Exists(file) ? Descriptions.Load(file, index) : null;
+            var report = BoardReports.Summary(index, node, window, "lines", fromWindow: false, description);
             // What landed since the human last used a window on the project.
             if (node.Path.Length == 0 && seen?.Invoke(root) is { } mark)
                 report = report with { SinceLastSeen = await Since.ComputeAsync(git, index, mark, cancellationToken) };
@@ -245,6 +268,94 @@ public sealed class BoardTools(
             return Error(e.Message);
         }
     }
+
+    const string NoDescription =
+        "No description yet. The FloorPlan prompt describe-project says how to write one; save it with describe.";
+
+    /// <summary>
+    /// The project's description in full, checked against a fresh read-only scan: what no longer
+    /// matches, what each system holds, the code no system names yet, and where it is kept.
+    /// </summary>
+    public async Task<BoardToolResult> DescriptionAsync(string? project = null, CancellationToken cancellationToken = default)
+    {
+        var (root, file, error) = await DescriptionPlaceAsync(project, cancellationToken);
+        if (error is not null) return Error(error);
+        try
+        {
+            if (!File.Exists(file)) return Result(new DescriptionReply { Project = root!, File = file!, Note = NoDescription });
+            var index = await ScanAsync(root!, cancellationToken);
+            return Result(Reply(root!, file!, Descriptions.Load(file!, index), index, saved: null));
+        }
+        catch (Exception e) when (e is DirectoryNotFoundException or GitException or IOException or UnauthorizedAccessException)
+        {
+            return Error(e.Message);
+        }
+    }
+
+    /// <summary>
+    /// Checks a description an agent wrote against a fresh read-only scan and, unless it has
+    /// problems, saves it where FloorPlan keeps the project's description; open windows show it
+    /// at once. Stale anchors are reported, not refused, so they can be fixed in another round.
+    /// </summary>
+    public async Task<BoardToolResult> DescribeAsync(string description, string? project = null, CancellationToken cancellationToken = default)
+    {
+        ProjectDescription? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<ProjectDescription>(description, ScanJson.Options);
+        }
+        catch (JsonException e)
+        {
+            return Error($"Not a description: {e.Message}");
+        }
+        if (parsed is null) return Error("Not a description: it is empty");
+        var (root, file, error) = await DescriptionPlaceAsync(project, cancellationToken);
+        if (error is not null) return Error(error);
+        try
+        {
+            var index = await ScanAsync(root!, cancellationToken);
+            var report = Descriptions.Check(file!, parsed, index);
+            if (report.Problems is { Count: > 0 })
+                return Result(Reply(root!, file!, report, index, saved: false) with { Note = "Not saved: fix the problems and call describe again." });
+            Directory.CreateDirectory(Path.GetDirectoryName(file!)!);
+            var temp = file + ".tmp";
+            await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(parsed, ScanJson.Indented), cancellationToken);
+            File.Move(temp, file!, overwrite: true);
+            var note = report.Stale is null ? "Saved; open windows show it now." : "Saved, with stale anchors: fix them and call describe again.";
+            return Result(Reply(root!, file!, report, index, saved: true) with { Note = note });
+        }
+        catch (Exception e) when (e is DirectoryNotFoundException or GitException or IOException or UnauthorizedAccessException)
+        {
+            return Error(e.Message);
+        }
+    }
+
+    /// <summary>The project a description call concerns, chosen as summaries choose it, and its description's file.</summary>
+    async Task<(string? Root, string? File, string? Error)> DescriptionPlaceAsync(string? project, CancellationToken cancellationToken)
+    {
+        if (descriptionPath is null) return (null, null, "This FloorPlan keeps no project descriptions");
+        var (_, targets) = await TargetsAsync(project, null, cancellationToken);
+        string root;
+        if (targets.Count > 0) root = targets[0].Project!;
+        else if (ProjectFolder(project) is { } folder) root = await ProjectRootAsync(folder, cancellationToken);
+        else return (null, null, $"No open window or folder for the project \"{project}\"");
+        return (root, descriptionPath(root), null);
+    }
+
+    async Task<ProjectIndex> ScanAsync(string root, CancellationToken cancellationToken) =>
+        new(await new ProjectScanner(git).ScanAsync(root, scanOptions(root), null, cancellationToken));
+
+    static DescriptionReply Reply(string root, string file, DescriptionReport report, ProjectIndex index, bool? saved) => new()
+    {
+        Project = root,
+        File = file,
+        Saved = saved,
+        Description = report.Description,
+        Problems = report.Problems,
+        Stale = report.Stale,
+        Systems = report.Description is null ? null : Descriptions.Systems(report, index),
+        Unnamed = report.Unnamed,
+    };
 
     /// <summary>Raises the window showing the project, or starts one and waits until it has scanned.</summary>
     public async Task<BoardToolResult> OpenAsync(string? project = null, CancellationToken cancellationToken = default)

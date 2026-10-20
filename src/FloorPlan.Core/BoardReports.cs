@@ -134,6 +134,12 @@ public sealed record SummaryReport
     public IReadOnlyList<string>? PairedByName { get; init; }
     /// <summary>For the whole project: what landed since the human last saw it.</summary>
     public SinceReport? SinceLastSeen { get; init; }
+    /// <summary>For a file: the system its project description puts it in.</summary>
+    public SystemRef? System { get; init; }
+    /// <summary>For the whole project: its description in brief; get_description gives it in full.</summary>
+    public DescriptionDigest? Description { get; init; }
+    /// <summary>For the whole project: when its description is missing or out of date, what to do about it.</summary>
+    public string? DescriptionNote { get; init; }
 }
 
 public sealed record ShowReport
@@ -283,7 +289,7 @@ public static class BoardReports
         since is { ShownAt: { } at } ? since with { SecondsAgo = Seconds(now - at) } : since;
 
     /// <summary>Footprint, composition and activity of a file or folder.</summary>
-    public static SummaryReport Summary(ProjectIndex index, TreeNode node, CommitWindow? window, string area, bool fromWindow)
+    public static SummaryReport Summary(ProjectIndex index, TreeNode node, CommitWindow? window, string area, bool fromWindow, DescriptionReport? description = null)
     {
         var files = ProjectIndex.FilesUnder(node).ToList();
         var composition = files
@@ -330,6 +336,9 @@ public static class BoardReports
         var relations = ChangesWith.For(index, node, PartnerLimit);
         return new SummaryReport
         {
+            System = node.IsFile ? Descriptions.SystemOf(description, node) : null,
+            Description = node.Path.Length == 0 ? Descriptions.Digest(description, index) : null,
+            DescriptionNote = node.Path.Length == 0 ? Descriptions.Note(description) : null,
             CommitsLoaded = relations?.Commits,
             ChangesWith = relations is { ChangesWith.Count: > 0 } ? relations.ChangesWith : null,
             PairedByName = relations is { PairedByName.Count: > 0 } ? relations.PairedByName : null,

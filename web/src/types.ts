@@ -121,7 +121,7 @@ export interface BoardView {
     removed: boolean
   } | null
   area: 'lines' | 'bytes'
-  fill: 'activity' | 'age' | 'kind'
+  fill: 'activity' | 'age' | 'kind' | 'systems'
   theme: 'light' | 'dark'
 }
 
@@ -146,6 +146,65 @@ export interface FileRelations {
   changesWith: Partner[]
   /** For code, its tests by naming convention; for a test, the code it is named for. */
   pairedByName: string[]
+}
+
+/** A part of the project in its description, anchored to paths (FloorPlan.Core's SystemEntry). */
+export interface SystemEntry {
+  id: string
+  name: string
+  /** One to three characters the map prints on the system's regions. */
+  code?: string
+  role?: string
+  status?: string
+  /** observed, declared or inferred */
+  basis?: string
+  paths: string[]
+  docs: string[]
+}
+
+export interface DirectionEntry {
+  text: string
+  systems: string[]
+  basis?: string
+  docs: string[]
+}
+
+export interface FindingEntry {
+  title: string
+  text?: string
+  basis?: string
+  paths: string[]
+}
+
+/** The project description an agent wrote (FloorPlan.Core's ProjectDescription, format 1). */
+export interface ProjectDescription {
+  floorplan: number
+  project?: string
+  written?: { at?: string; by?: string; head?: string; from?: string[] }
+  summary?: string
+  systems: SystemEntry[]
+  direction: DirectionEntry[]
+  findings: FindingEntry[]
+}
+
+/** An anchor that names nothing in the current scan. */
+export interface StaleAnchor {
+  where: string
+  anchor: string
+  reason: string
+}
+
+/** A description checked against the scan (FloorPlan.Core's DescriptionReport). */
+export interface DescriptionReport {
+  file: string
+  description?: ProjectDescription
+  problems?: string[]
+  stale?: StaleAnchor[]
+  systemFiles?: number[]
+  /** For each file id, the index of its system, -1 for none. */
+  systemOf?: number[]
+  /** Code and tests that no system names, largest first. */
+  unnamed?: { path: string; files: number; lines: number }[]
 }
 
 /** One thing an agent points at: a path of the scan, optionally a file's lines. */

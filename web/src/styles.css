@@ -31,6 +31,12 @@
   --accent: #2a78d6;
   --change: #4a3aa7;
   --pointer: #c2257a;
+  /* Systems lens: five families, the same in each theme, checked against each other and what they touch (DISCOVERY.md) */
+  --sys-1: #137ece;
+  --sys-2: #6cc185;
+  --sys-3: #368223;
+  --sys-4: #474e55;
+  --sys-5: #90aae4;
   --syn-keyword: #7a3e9d;
   --syn-string: #2b7a3d;
   --syn-comment: #8a8780;
@@ -78,6 +84,11 @@
     --accent: #3987e5;
     --change: #bda8fc;
     --pointer: #f566ab;
+  --sys-1: #1a9be5;
+  --sys-2: #65c36f;
+  --sys-3: #1b6a00;
+  --sys-4: #747474;
+  --sys-5: #1f53aa;
     --syn-keyword: #c792ea;
     --syn-string: #9ed39b;
     --syn-comment: #85837c;
@@ -126,6 +137,11 @@
   --accent: #3987e5;
   --change: #bda8fc;
   --pointer: #f566ab;
+  --sys-1: #1a9be5;
+  --sys-2: #65c36f;
+  --sys-3: #1b6a00;
+  --sys-4: #747474;
+  --sys-5: #1f53aa;
   --syn-keyword: #c792ea;
   --syn-string: #9ed39b;
   --syn-comment: #85837c;
@@ -688,6 +704,19 @@ button.row:hover { background: var(--hover); }
 .chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .chip.change { color: var(--change); }
 .chip.change[aria-pressed="true"] { background: var(--change); color: var(--surface); border-color: var(--change); }
+
+/* The project description: systems, direction and findings */
+
+.description-text { margin: 8px 0 4px; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
+.description-entry { margin-bottom: 10px; }
+.description-title { margin-top: 8px; color: var(--ink); font-size: 12px; font-weight: 600; }
+.system-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+.system-row[aria-pressed="true"] { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
+.side-title .swatch { display: inline-block; vertical-align: middle; margin-right: 4px; }
+.system-link { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+.system-link:hover { text-decoration: underline; }
+.mono-rows .row-name { font-size: 11px; }
+.system-code { font-weight: 700; font-size: 11px; color: var(--ink-2); }
 
 /* A selected file's tests and the files that change with it */
 

@@ -3,6 +3,7 @@ import { changeCounts, changeKind, changeSummary } from './changes'
 import * as format from './format'
 import { GLYPHS, ICON_FONT } from './glyphs'
 import type { Item } from './layout'
+import { codeShown, systemSlot } from './meaning'
 import { dominantKind, displayName, LINES_AREA, type Footprint, type Model, type Node } from './model'
 import { prefersDarkText, type Palette } from './palette'
 import type { Lens } from './state'
@@ -30,6 +31,12 @@ export interface Scene {
   hover: Node | null
   selected: Node | null
   touched: Uint8Array | null
+  /** Each node's system for the systems lens, -1 for none. */
+  systems: Int16Array | null
+  /** Each system's code, printed on its regions under the systems lens. */
+  codes: string[] | null
+  /** A picked system's files and folders; the rest of the map is dimmed. */
+  isolated: Uint8Array | null
   /** Files and folders agents are pointing at. */
   pointed: readonly Node[]
   /** Extra emphasis for a pointer that just arrived, 0 to 1. */
@@ -57,6 +64,11 @@ export function fillFor(scene: Scene, node: Node): string | CanvasPattern {
   const { palette } = scene
   const kind = dominantKind(scene.model, node, scene.footprint)
   if (scene.lens === 'kind') return palette.kind[kind]
+  if (scene.lens === 'systems') {
+    // A colour per system; files no system names keep the dim tint of their kind.
+    const s = scene.systems?.[node.index] ?? -1
+    return s >= 0 ? palette.systems[systemSlot(s)] : palette.ground[kind]
+  }
   if (!scene.model.scan.project.git) return palette.unsampled
   let step: number
   if (scene.lens === 'age') {
@@ -119,7 +131,8 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, width: nu
 
   const minW = 0.3 / view.sx
   const minH = 0.3 / view.sy
-  const touched = scene.touched
+  // A selected commit, or else a picked system, keeps its files at full strength.
+  const touched = scene.touched ?? scene.isolated
 
   for (const it of scene.items) {
     if (it.w < minW || it.h < minH) continue
@@ -144,7 +157,8 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: Scene, width: nu
 function drawLabels(ctx: CanvasRenderingContext2D, scene: Scene) {
   ctx.textBaseline = 'middle'
   for (const it of scene.items) {
-    const dim = scene.touched !== null && !scene.touched[it.node.index]
+    const lit = scene.touched ?? scene.isolated
+    const dim = lit !== null && !lit[it.node.index]
     ctx.globalAlpha = dim ? 0.45 : 1
     if (it.open) {
       if (it.header) headerLabel(ctx, scene, it)
@@ -175,6 +189,24 @@ function headerLabel(ctx: CanvasRenderingContext2D, scene: Scene, it: Item) {
     room -= countsWidth + 8
   }
 
+  // Under the systems lens, the system's code in its colour, where it differs from the folder around it.
+  const code = systemCode(scene, it)
+  if (code) {
+    ctx.font = `700 10px ${FONT}`
+    const width = ctx.measureText(code.text).width + 8
+    const height = Math.min(14, it.header - 4)
+    if (room > width + 50 && height >= 10) {
+      const left = it.x + 6 + room - width
+      ctx.fillStyle = code.color
+      ctx.beginPath()
+      ctx.roundRect(left, y - height / 2, width, height, 3)
+      ctx.fill()
+      ctx.fillStyle = prefersDarkText(code.color) ? DARK_TEXT : LIGHT_TEXT
+      ctx.fillText(code.text, left + 4, y + 0.5)
+      room -= width + 6
+    }
+  }
+
   ctx.font = `600 ${size}px ${FONT}`
   const name = displayName(scene.model, it.node)
   const showTag = room > tagSpace + 40
@@ -194,7 +226,17 @@ function leafLabel(ctx: CanvasRenderingContext2D, scene: Scene, it: Item) {
   const x = it.x + 4
   // A new file's corner mark takes the top right.
   const change = it.node.src.change
-  const room = it.w - 8 - (change && changeKind(change) === 'new' ? CORNER : 0)
+  let room = it.w - 8 - (change && changeKind(change) === 'new' ? CORNER : 0)
+  // Under the systems lens, a file's code where its system differs from its folder's.
+  const code = systemCode(scene, it)
+  if (code) {
+    ctx.font = `700 10px ${FONT}`
+    const width = ctx.measureText(code.text).width
+    if (room > width + 24) {
+      ctx.fillText(code.text, x + room - width, it.y + 9)
+      room -= width + 5
+    }
+  }
   ctx.font = `11px ${FONT}`
   ctx.fillText(fit(ctx, it.node.name, room), x, it.y + 9)
   if (it.h >= 30) {
@@ -204,6 +246,13 @@ function leafLabel(ctx: CanvasRenderingContext2D, scene: Scene, it: Item) {
       drawTag(ctx, tag, x, it.y + 22, 10)
     }
   }
+}
+
+/** The code and colour to print on an item under the systems lens, if it shows one. */
+function systemCode(scene: Scene, it: Item): { text: string; color: string } | null {
+  if (scene.lens !== 'systems' || !scene.systems || !scene.codes) return null
+  const s = codeShown(scene.systems, it.node, it.depth)
+  return s < 0 ? null : { text: scene.codes[s] ?? '?', color: scene.palette.systems[systemSlot(s)] }
 }
 
 function drawOverlays(ctx: CanvasRenderingContext2D, scene: Scene, view: View) {
