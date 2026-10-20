@@ -314,6 +314,32 @@ public class BoardToolsTests
     }
 
     [Fact]
+    public async Task A_file_summary_lists_its_outline_with_or_without_a_window()
+    {
+        using var repo = new TempRepo()
+            .Write("scenes/world.gd", "const SIZE := 2\n\nfunc _ready() -> void:\n    pass\n")
+            .Write("README.md", "# World\n\nWalk.\n")
+            .Commit("Start");
+        var tools = Tools(repo.Root);
+
+        var scanned = Read<SummaryReport>(await tools.SummaryAsync("scenes/world.gd", repo.Root));
+        await using var window = await Window.OpenAsync(repo.Root, TimeSpan.FromSeconds(5));
+        var shown = Read<SummaryReport>(await tools.SummaryAsync("scenes/world.gd", repo.Root));
+        var document = Read<SummaryReport>(await tools.SummaryAsync("README.md", repo.Root));
+        var folder = Read<SummaryReport>(await tools.SummaryAsync("scenes", repo.Root));
+
+        Assert.False(scanned.Window);
+        Assert.True(shown.Window);
+        foreach (var summary in new[] { scanned, shown })
+        {
+            Assert.Equal("gdscript", summary.Outline!.Language);
+            Assert.Equal([new OutlineEntry("constant", "SIZE", null, 1, 1), new OutlineEntry("function", "_ready", null, 3, 4)], summary.Outline.Symbols!);
+        }
+        Assert.Equal([new OutlineEntry("section", "world", "World", 1, 3)], document.Outline!.Symbols!);
+        Assert.Null(folder.Outline);
+    }
+
+    [Fact]
     public async Task Open_raises_the_window_or_starts_one_and_waits_for_it()
     {
         using var repo = new TempRepo().Write("a.gd", "1\n").Commit("Start");

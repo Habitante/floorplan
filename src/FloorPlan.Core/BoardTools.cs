@@ -246,7 +246,11 @@ public sealed class BoardTools(
         if (targets.Count > 0)
         {
             var (result, error) = await AskAsync(targets[0], new BoardRequest { Op = "summary", Path = path, Base = Folder }, cancellationToken);
-            return result is null ? Error(error!) : new BoardToolResult(result.ToJsonString(ScanJson.Options), false);
+            if (result is null) return Error(error!);
+            if (result["type"]?.GetValue<string>() == "file" && result["project"]?.GetValue<string>() is { } shown && result["path"]?.GetValue<string>() is { } file
+                && await OutlineAsync(shown, file, cancellationToken) is { } outline)
+                result["outline"] = JsonSerializer.SerializeToNode(outline, ScanJson.Options);
+            return new BoardToolResult(result.ToJsonString(ScanJson.Options), false);
         }
         if (ProjectFolder(project) is not { } folder) return Error($"No open window or folder for the project \"{project}\"");
         try
@@ -261,11 +265,41 @@ public sealed class BoardTools(
             // What landed since the human last used a window on the project.
             if (node.Path.Length == 0 && seen?.Invoke(root) is { } mark)
                 report = report with { SinceLastSeen = await Since.ComputeAsync(git, index, mark, cancellationToken) };
+            if (node.IsFile) report = report with { Outline = await OutlineAsync(root, node.Path, cancellationToken) };
             return Result(report);
         }
         catch (Exception e) when (e is DirectoryNotFoundException or GitException or IOException or UnauthorizedAccessException)
         {
             return Error(e.Message);
+        }
+    }
+
+    /// <summary>
+    /// A file's outline, read and parsed here rather than in the window, so the window's interface
+    /// never waits on it. The path comes from a scan, and must stay inside its project.
+    /// </summary>
+    static async Task<OutlineReport?> OutlineAsync(string root, string path, CancellationToken cancellationToken)
+    {
+        if (!Outlines.Supports(path)) return null;
+        string full;
+        try
+        {
+            full = Path.GetFullPath(Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)));
+        }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+        if (SameFolder(root, full) || !Inside(root, full) || !File.Exists(full)) return null;
+        try
+        {
+            var (outline, note) = await Outlines.ReadAsync(full, path, cancellationToken);
+            if (outline is not null) return BoardReports.Outline(outline);
+            return note is null ? null : new OutlineReport { Language = Grammars.For(path)?.Name ?? "markdown", Note = note };
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 

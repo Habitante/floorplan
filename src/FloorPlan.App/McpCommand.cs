@@ -45,8 +45,9 @@ static class McpCommand
         "was away: commits since the HEAD they last saw, the regions those touched, and who made them (agents appear as " +
         "co-authors). If the window showed it in the last few minutes, or no window is open, tell them in a line or two " +
         "before anything else. In a diff, line numbers count in the version named by lineNumbers and " +
-        "removed lines have none; rely on selectedText. show points at files, folders and lines (\"path:480-492\"); at the " +
-        "end of a task, show the files you changed. Every tool takes an optional project and otherwise uses the window the " +
+        "removed lines have none; rely on selectedText. show points at files, folders and lines (\"path:480-492\"); a file's " +
+        "summary outlines it, so you can point at a function or a section by its lines. At the end of a task, show the files " +
+        "you changed. Every tool takes an optional project and otherwise uses the window the " +
         "human used last, so check the project in each reply.\n\n" +
         "A project description says what the project's parts are for and where they live: its systems with the paths they " +
         "own, where the project is heading, and findings worth knowing. Agents write it, FloorPlan checks it against the " +
@@ -149,7 +150,9 @@ static class McpCommand
                             "For a file, also the files that change in the same commits over the loaded history (changesWith: together " +
                             "in how many of its commitsLoaded, strength 0 to 1, commits touching many files counting for less) and its " +
                             "tests or code by naming convention (pairedByName). Changing together is not depending, and pairing is not " +
-                            "coverage. Without an open window it scans the project and counts the latest 40 commits.",
+                            "coverage. For a source file or a document, also its outline: the symbols it declares (classes, functions, data) " +
+                            "or its sections, in file order, each with its lines and an id unique in the file. Without an open window it " +
+                            "scans the project and counts the latest 40 commits.",
                         ReadOnly = true,
                         Idempotent = true,
                         OpenWorld = false,

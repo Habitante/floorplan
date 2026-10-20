@@ -53,6 +53,7 @@ First case study: a private Godot game. Its retained legacy code and the convent
 | Window | A minimal WinForms host for WebView2, the Edge runtime that ships with Windows 11. |
 | Front end | TypeScript. The map is drawn on Canvas 2D with our own squarified layout. Panels use Preact, with signals for shared state such as selection. |
 | Text views | CodeMirror 6 for files and diffs, markdown-it for documents. ELK.js for system and flow layout when those views arrive. |
+| Parsing | tree-sitter 0.27 and its grammars for GDScript, Godot shaders, Python, JavaScript, TypeScript and C#, compiled from pinned commits into one native library inside the executable (`native/`). Markdown outlines by its headings, without a grammar. |
 | Bridge | WebView2 JSON messages between front end and core. No HTTP server, no listening port. |
 | Agent access | MCP through the official C# SDK (`ModelContextProtocol.Core`), stdio transport. |
 | Git | The installed `git` executable. |
@@ -60,7 +61,7 @@ First case study: a private Godot game. Its retained legacy code and the convent
 | Build | `dotnet` for the core and executable; npm and Vite for the front end at build time only. |
 | Checks | xUnit with fixture repositories for core behaviour, Vitest for layout, activity and board logic, smoke checks of the real window. |
 
-Web technology carries the text-heavy parts (code, diffs, documents, tooltips); C# keeps the core readable to the owner, fast and publishable as one file. Accepted costs: two languages and a message bridge, a Node toolchain at build time, Windows first, and an executable of tens of megabytes. A macOS/Linux build replaces only the window host. The alternatives considered are in [DISCOVERY.md](DISCOVERY.md#stack).
+Web technology carries the text-heavy parts (code, diffs, documents, tooltips); C# keeps the core readable to the owner, fast and publishable as one file. Accepted costs: two languages and a message bridge, a Node toolchain and Visual Studio's C++ build tools at build time, native parsers inside the process, Windows first, and an executable of tens of megabytes. A macOS/Linux build replaces only the window host. The alternatives considered are in [DISCOVERY.md](DISCOVERY.md#stack).
 
 Use the reference projects under `ref/` for ideas or small algorithms, keeping licences and attribution. Do not adopt one wholesale.
 
@@ -89,13 +90,15 @@ Use the reference projects under `ref/` for ideas or small algorithms, keeping l
 - The front end has no filesystem or process access. The bridge exposes a small set of validated operations (open project, rescan, read file, read diff, report the view). Every repository path, from the front end or from an agent, must name an entry of the last scan inside the project root.
 - Scans and Git queries run off the UI thread with bounded concurrency, report progress and can be cancelled.
 - Layout calculation is separate from drawing and interaction.
+- Parsing runs in Core, read-only, on demand and one file at a time. The agent's server outlines a file for `summary` itself, so a window's interface never waits on it. The native library loads only from FloorPlan's own folders, never through the system's search path, since FloorPlan runs inside folders it does not trust.
 
 ```text
-src/FloorPlan.Core/           Inventory, Git parsing, tree aggregation, scan model, the board's model and channel
+src/FloorPlan.Core/           Inventory, Git parsing, tree aggregation, scan model, outlines, the board's model and channel
 src/FloorPlan.App/            floorplan.exe: window host, bridge, MCP server, scan and smoke modes
 web/                          Front end: canvas map, panels, layout, activity and pointers
 tests/FloorPlan.Core.Tests/   Fixture repositories and behaviour checks
 examples/                     FloorPlan's own project description, the public example
+native/                       The parsers: tree-sitter and its grammars at pinned commits, and their build
 ```
 
 ### Inventory and history
@@ -136,7 +139,7 @@ Documentation signals:
 
 - `get_selection(project?)`: what the human is looking at, so "this" has a referent. The selected file or folder with its measurements and last commit, when it was selected and, if HEAD has moved since, the HEAD at that time; the file in the reader with the lines in view, the selected lines and the selected text; the zoomed folder, the selected commit and the history range; the last five selections; how long since the human's own input in the window (not view changes, which refreshes and agents make too), with `stale` after ten minutes; what landed while the human was away (`sinceLastSeen`), while the window shows it; and the other open windows. In a diff, line numbers count in the newer version, named in the reply, and removed lines have none, so the selected text is what settles a selection. The human selects, then types, and by the time the agent asks the selection may have moved.
 - `show(paths, caption, agent?, project?, reveal?)`: outlines files and folders on the map with a short caption instead of paragraphs of prose; `path:480-492` points at lines, which the reader highlights. One pointer per agent, named by the agent or after its MCP client, stays until the agent points again or the human dismisses it; every window on the project draws it and the reply counts them. Paths resolve against the scan (absolute, or relative to the root or the agent's folder). A path that exists but is not on the map (ignored by Git, untracked) outlines its nearest folder on the map and is reported with its reason; a path that does not exist is reported as unknown. `reveal` also raises the window, shows the paths on the map and opens the reader at the lines, for when the human asked to be shown. Without a window, `show` reports that nobody is looking, so the agent falls back to prose. At the end of a task, pointing at the files it changed is the agent's visual handoff.
-- `summary(path?, project?)`: footprint, composition and activity of a folder or file from the model the human sees, counted over the human's history range; without a window, from a fresh read-only scan over the latest 40 commits. A folder's line total is `codeAndDocLines`, the Lines area; its composition adds data. File and folder replies carry `lastCommit`, measured as the Age lens measures it, so agents can talk about what the human sees under Age. A file's reply adds what changes with it and its tests by name (milestone 3). A summary of the whole project also carries `sinceLastSeen`: the window's briefing, or without a window, what landed since the human last used one on the project.
+- `summary(path?, project?)`: footprint, composition and activity of a folder or file from the model the human sees, counted over the human's history range; without a window, from a fresh read-only scan over the latest 40 commits. A folder's line total is `codeAndDocLines`, the Lines area; its composition adds data. File and folder replies carry `lastCommit`, measured as the Age lens measures it, so agents can talk about what the human sees under Age. A file's reply adds what changes with it and its tests by name (milestone 3), and a source file's or document's reply its outline: the symbols it declares or its sections, in file order, with their lines and IDs (milestone 5). A summary of the whole project also carries `sinceLastSeen`: the window's briefing, or without a window, what landed since the human last used one on the project.
 - `open(project?)`: raises the window showing a project, or starts one and waits until it has scanned. Neither takes the keyboard from the human, and a started window outlives the agent's session. For when the repository is being discussed and no window shows it; the agent then tells the human to look.
 - `get_description(project?)`: the project's description in full, checked against a fresh read-only scan: stale anchors, problems, what each system holds, the largest code no system names, and where it is kept. A project's `summary` carries it in brief, and a file's `summary` names its system.
 - `describe(description, project?)`: checks a description an agent wrote and, unless it has problems, saves it where FloorPlan keeps the project's description; windows on the project show it at once. Stale anchors are reported, not refused.
@@ -167,6 +170,10 @@ Built in this order. Sizes are rough: S is about a session, M a couple, L severa
 | 3 | Files that change together, with tests paired to code | S–M |
 | 4 | Meaning on paths: the agent-written description, drawn as named regions | M |
 | 5 | Inside files: skeletons and symbols | M–L |
+| 5a | Parsing in Core: outlines with stable IDs, documents by their headings, in a file's summary | S |
+| 5b | The skeleton reader: every file folded to its declarations, uncommitted lines marked in its margin | M |
+| 5c | The map inside files: symbols as regions, with their changes and age | M |
+| 5d | Symbols on the board: selection and pointers by symbol, names mentioned in other files | S–M |
 | 6 | Meaning on symbols: data, flows and documentation signals | L |
 | 7 | Proposals | M |
 | — | Before a first release: automated build, release executable | S |
@@ -237,7 +244,13 @@ Acceptance: the user can locate the case study's main systems on the map and exp
 
 ### 5. Inside files: skeletons and symbols
 
-The map continues past a file: zooming into one shows its symbols (types, functions, data declarations, marked sections) as regions sized by lines, and the reader pane shows the skeleton as an outline whose bodies expand on demand. Parsing uses tree-sitter grammars and tag queries, read-only and on demand, so one engine provides colouring, skeletons and symbol identities. Symbols get stable IDs (path plus qualified name), which later milestones use as anchors. Relationships start with references by name and may later come from language servers or agent descriptions.
+The map continues past a file: zooming into one shows its symbols (types, functions, data declarations, marked sections) as regions sized by lines, and the reader shows the file as a skeleton whose bodies expand on demand. Parsing uses tree-sitter grammars with an outline query per language, in Core, read-only and on demand, so the window, agents and the description's checks share one parser, with or without a window; documents outline by their headings. The reader's colouring stays with CodeMirror until tree-sitter earns its place there. Symbols get stable IDs (path plus qualified name), which later milestones use as anchors. Relationships start with references by name and may later come from language servers or agent descriptions.
+
+**The skeleton is the file itself, folded,** and every file opens that way. Declarations, data and comments stay in view. A body folds when that hides four lines or more, so a small file reads almost whole; long data and long comment blocks fold after their first line, and a Python docstring after its summary line. Data that holds methods, and tests that hold tests, stay open so what they hold reads. A fold shows its size (`⋯ 118`) and opens on a click. Being the real text, the skeleton keeps line numbers, selections, "this" and agents' line pointers, and lines an agent points at open by themselves. Banner comments start sections that run to the next banner at their level: a titled rule (`# --- Saving ---`), a region marker, a title between two rules, a C# region, a shader's uniform group. A document folds each section's own text, so its headings read as its outline, each with its size.
+
+**Changes show in the margin.** A violet bar marks lines changed since the last commit and a wedge marks deleted ones, as the map outlines uncommitted files. A folded body with changes carries the bar and their count (`⋯ 118  +6 −2`), so a function an agent added is barred top to bottom. A strip along the scrollbar marks where the file's changes and agents' pointers are, a bird's-eye view of a long file. The marks follow the agent's saves, as the map's outlines do.
+
+**IDs** are a symbol's name qualified by what holds it (`Player.jump`, `config.server.start`), unique in the file. Sections and namespaces hold symbols without naming them, so moving a function between sections keeps its ID; a repeated name is numbered (`Area~2`). A document's sections take their heading's anchor as GitHub makes it (`milestones`, then `milestones-1`).
 
 Acceptance: on the case study, a GDScript, a Python and a shader file show correct skeletons with line counts; a symbol's ID survives an unrelated edit to its file; the skeleton reads faster than the file for learning what it does.
 

@@ -140,7 +140,25 @@ public sealed record SummaryReport
     public DescriptionDigest? Description { get; init; }
     /// <summary>For the whole project: when its description is missing or out of date, what to do about it.</summary>
     public string? DescriptionNote { get; init; }
+    /// <summary>For a source file or a document: what it declares, or its sections, with their lines.</summary>
+    public OutlineReport? Outline { get; init; }
 }
+
+/// <summary>A file's outline as summary lists it: its symbols in file order, each with its lines.</summary>
+public sealed record OutlineReport
+{
+    public required string Language { get; init; }
+    public IReadOnlyList<OutlineEntry>? Symbols { get; init; }
+    public int? NotListed { get; init; }
+    /// <summary>Places the grammar could not read, where the outline may miss declarations.</summary>
+    public int? Errors { get; init; }
+    public string? Note { get; init; }
+}
+
+/// <param name="Id">Its name qualified by what holds it, unique in the file: "path#id" names it. Sections of code have none.</param>
+/// <param name="Title">A section's title.</param>
+/// <param name="From">Its first line, with the comments above it.</param>
+public sealed record OutlineEntry(string Kind, string? Id, string? Title, int From, int To);
 
 public sealed record ShowReport
 {
@@ -169,6 +187,7 @@ public static class BoardReports
     public const int PartnerLimit = 8;
     public const int UncommittedLimit = 25;
     public const int SelectedTextLimit = 4000;
+    public const int OutlineLimit = 200;
     /// <summary>A window idle this long may no longer show what the human means.</summary>
     public static readonly TimeSpan StaleAfter = TimeSpan.FromMinutes(10);
 
@@ -361,6 +380,24 @@ public static class BoardReports
             UncommittedNotListed = changed.Count > UncommittedLimit ? changed.Count - UncommittedLimit : null,
             Largest = largest is { Count: > 0 } ? largest : null,
             RecentCommits = recent is { Count: > 0 } ? recent : null,
+        };
+    }
+
+    /// <summary>
+    /// A file's outline as agents read it: every symbol in file order, up to the limit. A document's
+    /// sections carry their anchor as id and their heading as title.
+    /// </summary>
+    public static OutlineReport Outline(FileOutline outline)
+    {
+        var all = outline.All().ToList();
+        return new OutlineReport
+        {
+            Language = outline.Language,
+            Symbols = all.Take(OutlineLimit)
+                .Select(s => new OutlineEntry(s.Kind, s.Id, s.Kind == "section" ? s.Name : null, s.From, s.To))
+                .ToList(),
+            NotListed = all.Count > OutlineLimit ? all.Count - OutlineLimit : null,
+            Errors = outline.Errors,
         };
     }
 

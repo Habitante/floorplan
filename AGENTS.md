@@ -37,6 +37,7 @@ The product helps a human understand and direct a software project while working
 ## Implementation
 
 - The stack in `DESIGN.md` is decided: a C# core and a TypeScript front end hosted in WebView2, shipped as one executable. Pin exact dependency versions, prefer releases at least two weeks old, and commit the lockfiles.
+- Parsers are pinned by commit in `native/sources.json` and compiled by `native/build.ps1`; never run anything from their sources. Adding a language touches `native/sources.json`, `Grammars.cs`, an outline query in `src/FloorPlan.Core/Syntax/Queries`, the outline tests and `THIRD-PARTY-NOTICES.md`.
 - `FloorPlan.Core` references no UI, WebView2 or MCP packages. Keep layout calculations separate from drawing and interaction.
 - The front end has no filesystem or process access. The bridge exposes narrow, validated operations; validate every repository path against the project root. Use asynchronous work and bounded concurrency; do not block the interface during scans.
 - FloorPlan does not call AI models. Interpretation arrives from agents through the project description or MCP, and FloorPlan validates its anchors against the scan.

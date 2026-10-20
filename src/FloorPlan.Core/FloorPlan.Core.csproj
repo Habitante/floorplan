@@ -10,4 +10,33 @@
     <InternalsVisibleTo Include="FloorPlan.Core.Tests" />
   </ItemGroup>
 
+  <!-- Outline queries, one per grammar. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Syntax\Queries\*.scm" LogicalName="outline/%(Filename)%(Extension)" WithCulture="false" />
+  </ItemGroup>
+
+  <!-- The parsers: tree-sitter and its grammars, built by native\build.ps1 into one native library for
+       the target processor, copied beside the assemblies and bundled into a published executable. -->
+  <PropertyGroup>
+    <NativeDir>$(MSBuildThisFileDirectory)..\..\native\</NativeDir>
+    <NativePlatform Condition="'$(RuntimeIdentifier)' == 'win-arm64' Or ('$(RuntimeIdentifier)' == '' And '$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64')">arm64</NativePlatform>
+    <NativePlatform Condition="'$(NativePlatform)' == ''">x64</NativePlatform>
+    <NativeLibrary>$(NativeDir)bin\win-$(NativePlatform)\tree-sitter.dll</NativeLibrary>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <NativeInput Include="$(NativeDir)sources.json;$(NativeDir)build.ps1;$(NativeDir)tree-sitter.def" />
+  </ItemGroup>
+
+  <Target Name="BuildNative" Inputs="@(NativeInput)" Outputs="$(NativeLibrary)" Condition="'$(SkipNativeBuild)' != 'true'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(NativeDir)build.ps1&quot; -Platform $(NativePlatform)" />
+  </Target>
+
+  <Target Name="IncludeNative" BeforeTargets="AssignTargetPaths" DependsOnTargets="BuildNative">
+    <ItemGroup Condition="Exists('$(NativeLibrary)')">
+      <None Include="$(NativeLibrary)" Link="tree-sitter.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    </ItemGroup>
+    <Warning Condition="!Exists('$(NativeLibrary)')" Text="Built without parsers, so files have no outline: run native\build.ps1 -Platform $(NativePlatform)." />
+  </Target>
+
 </Project>
