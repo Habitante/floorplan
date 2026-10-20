@@ -13,7 +13,7 @@ export type HostMessage =
   | { type: 'since'; since: SinceReport }
   | { type: 'error'; message: string; path?: string }
   | { type: 'idle' }
-  | { type: 'file' | 'diff' | 'outline' | 'lineHistory'; request: number }
+  | { type: 'file' | 'diff' | 'outline' | 'lineHistory' | 'mentions'; request: number }
   | { type: 'openReader'; path: string; commit: string | null }
   /** An agent points at paths of the scan (validated by the host); no items clears its pointer. */
   | { type: 'pointer'; agent: string; caption: string; items: PointerItem[]; at: number; reveal: boolean }
@@ -30,6 +30,8 @@ export type AppMessage =
   | { type: 'outline'; path: string }
   /** Which lines of a file each loaded commit changed, and what is uncommitted, for the map inside it. */
   | { type: 'lineHistory'; path: string }
+  /** The files whose text mentions a name, leaving out the file it is declared in. */
+  | { type: 'mentions'; name: string; path: string }
   /** What changes with a file; the host answers from the scan on screen. */
   | { type: 'relations'; path: string }
   | { type: 'board'; view: BoardView }

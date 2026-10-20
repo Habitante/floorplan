@@ -30,6 +30,8 @@ export const inside = signal<Node | null>(null)
 export interface PartChoice {
   path: string
   id: string | null
+  name: string
+  kind: string
   from: number
   to: number
 }

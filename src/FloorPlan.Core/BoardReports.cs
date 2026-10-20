@@ -39,6 +39,8 @@ public sealed record NodeReport
     /// <summary>Files with uncommitted changes inside a folder.</summary>
     public int? UncommittedFiles { get; init; }
     public string? Note { get; init; }
+    /// <summary>The part of the file the human picked on the map inside it.</summary>
+    public BoardPart? Part { get; init; }
     public DateTimeOffset? SelectedAt { get; init; }
     public long? SecondsAgo { get; init; }
     /// <summary>HEAD when it was selected, when HEAD has moved since.</summary>
@@ -56,6 +58,8 @@ public sealed record ReaderReport
     public int[]? SelectedLines { get; init; }
     public string? SelectedText { get; init; }
     public bool? SelectionIncludesRemovedLines { get; init; }
+    /// <summary>The innermost declaration or section holding the selected lines; added by the agent's server.</summary>
+    public BoardPart? Symbol { get; init; }
     public DateTimeOffset? OpenedAt { get; init; }
     public long? SecondsAgo { get; init; }
 }
@@ -171,8 +175,10 @@ public sealed record ShowReport
     public IReadOnlyList<string> Shown { get; init; } = [];
     /// <summary>Paths that exist but are not on the map; their nearest folder on the map is outlined instead.</summary>
     public IReadOnlyList<OffMap>? NotOnMap { get; init; }
-    /// <summary>Paths that are not in the project at all.</summary>
+    /// <summary>Paths that are not in the project at all, and symbols their file does not declare.</summary>
     public IReadOnlyList<string>? Unknown { get; init; }
+    /// <summary>Each "path#id" named, with the lines it was shown as; added by the agent's server.</summary>
+    public IReadOnlyList<string>? Symbols { get; init; }
     public string? Note { get; init; }
 }
 
@@ -233,6 +239,7 @@ public static class BoardReports
                 : measure ? Node(node, window) : new NodeReport { Path = node.Path, Type = node.IsFile ? "file" : "folder" };
             return report with
             {
+                Part = choice.Part,
                 SelectedAt = choice.At,
                 SecondsAgo = Seconds(now - choice.At),
                 SelectedAtHead = choice.Head is not null && choice.Head != project.Head ? Short(choice.Head) : null,

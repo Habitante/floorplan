@@ -358,7 +358,7 @@ export class MapController {
       const file = this.parts.file
       if (!part || part === this.parts.tree.root) return
       batch(() => {
-        selectedPart.value = { path: file.path, id: part.id, from: part.from, to: part.to }
+        selectedPart.value = { path: file.path, id: part.id, name: part.name, kind: part.kind, from: part.from, to: part.to }
         readerFocus.value = { path: file.path, from: part.from, to: part.to }
         openReader(file)
       })

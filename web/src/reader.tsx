@@ -25,6 +25,7 @@ import * as format from './format'
 import { Icon } from './icons'
 import { displayName, type Model } from './model'
 import { pointedLines } from './board'
+import { Mentions } from './mentions'
 import { RelatedFiles } from './related'
 import { changeMarks, foldSkeleton, lineChanges, outlineFolding, pointedLines as pointedFacet, revealLines, type FileOutline, type LineChange } from './skeleton'
 import { activity, NO_LINES, pointers, range, reader, readerFocus, readerLines, type ReaderTarget } from './state'
@@ -237,6 +238,8 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
   const diff = commit !== null
   const sha = typeof commit === 'number' ? m.commits[commit]?.sha : undefined
   const view = useRef<EditorView | null>(null)
+  /** The file the editor shows: switching files, the old one stays until the new one loads. */
+  const shown = useRef<string | null>(null)
   const highlights = useRef(new Compartment())
   // Agents' line numbers count in the working file, which a commit's diff does not show.
   const workingFile = commit === null || commit === 'working'
@@ -279,6 +282,7 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
       state: EditorState.create({ doc: content.state === 'diff' ? content.after : content.text, extensions }),
     })
     view.current = editor
+    shown.current = node.path
     if (content.state === 'file' && content.outline && skeletonView.value) {
       const focus = readerFocus.value
       foldSkeleton(editor, content.outline, focus?.path === node.path ? [...ranges, [focus.from, focus.to] as const] : ranges)
@@ -287,6 +291,7 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
     return () => {
       stop()
       view.current = null
+      shown.current = null
       editor.destroy()
     }
   }, [content])
@@ -301,7 +306,7 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
   // Bring an agent's lines into view once the file is shown.
   useEffect(() => {
     const editor = view.current
-    if (!editor || !focusLines || focusLines.path !== node.path || !workingFile) return
+    if (!editor || !focusLines || focusLines.path !== node.path || shown.current !== node.path || !workingFile) return
     revealLines(editor, [[focusLines.from, focusLines.to]])
     const doc = editor.state.doc
     const line = doc.line(Math.min(Math.max(1, focusLines.from), lastLine(doc)))
@@ -349,6 +354,7 @@ export function Reader({ model: m, target }: { model: Model; target: ReaderTarge
         {modified && <span title={format.dateLong(modified)}><Icon name="clock" label="Modified" />{format.ago(modified)}</span>}
       </div>
       <RelatedFiles model={m} node={node} compact />
+      <Mentions model={m} node={node} />
       <div class="chips" role="group" aria-label="Show">
         <button class="chip" aria-pressed={commit === null} onClick={() => show(null)}><Icon name="fileLines" />File</button>
         {src.change && (

@@ -340,6 +340,33 @@ public class BoardToolsTests
     }
 
     [Fact]
+    public async Task Agents_point_at_a_symbol_by_its_id_and_learn_which_one_the_human_picked_or_reads()
+    {
+        using var repo = new TempRepo().Write("scenes/world.gd", "const SIZE := 2\n\nfunc _ready() -> void:\n    pass\n    pass\n").Commit("Start");
+        await using var window = await Window.OpenAsync(repo.Root, TimeSpan.FromSeconds(5));
+        var tools = Tools(repo.Root);
+
+        var show = Read<ShowReport>(await tools.ShowAsync(["scenes/world.gd#_ready", "scenes/world.gd#nothing"], "Ready", "Claude", repo.Root));
+
+        Assert.Equal(["scenes/world.gd:3-5"], show.Shown);
+        Assert.Equal(["scenes/world.gd#_ready = scenes/world.gd:3-5"], show.Symbols!);
+        Assert.Equal(["scenes/world.gd#nothing"], show.Unknown!);
+        Assert.Equal(new PointerItem("scenes/world.gd", 3, 5), Assert.Single(Assert.Single(window.Surface.Pointers).Items));
+
+        var ready = new BoardPart("_ready", "_ready", "function", 3, 5);
+        window.Surface.State.Update(new BoardView
+        {
+            Selected = "scenes/world.gd",
+            Part = ready,
+            Reader = new BoardReader("scenes/world.gd", null, [1, 5], [4, 4], "pass"),
+        }, null, DateTimeOffset.Now);
+        var selection = Read<SelectionReport>(await tools.SelectionAsync(repo.Root));
+
+        Assert.Equal(ready, selection.Selected!.Part);
+        Assert.Equal(ready, selection.Reader!.Symbol);       // the declaration around the selected lines
+    }
+
+    [Fact]
     public async Task Open_raises_the_window_or_starts_one_and_waits_for_it()
     {
         using var repo = new TempRepo().Write("a.gd", "1\n").Commit("Start");

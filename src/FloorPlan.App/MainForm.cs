@@ -235,6 +235,15 @@ sealed class MainForm : Form, IBoardSurface
                 else _ = ReadLineHistoryAsync(request, path);
                 break;
             }
+            case "mentions":
+            {
+                var root = message.RootElement;
+                int request = root.TryGetProperty("request", out var r) && r.TryGetInt32(out int id) ? id : 0;
+                string? name = root.TryGetProperty("name", out var n) ? n.GetString() : null;
+                string? path = root.TryGetProperty("path", out var p) ? p.GetString() : null;
+                _ = FindMentionsAsync(request, name, path);
+                break;
+            }
             case "relations":
             {
                 // What changes with a selected file, from the scan on screen; quick enough to answer at once.
@@ -395,6 +404,22 @@ sealed class MainForm : Form, IBoardSurface
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             Post(new { type = "outline", request, error = e.Message });
+        }
+    }
+
+    /// <summary>The files whose text mentions a name, leaving out the one it is declared in.</summary>
+    async Task FindMentionsAsync(int request, string? name, string? path)
+    {
+        try
+        {
+            if (name is null || lastScan is not { Project.Git: true } scan) { Post(new { type = "mentions", request, mentions = (MentionReport?)null }); return; }
+            var except = index?.Get(path) is { IsFile: true } file ? file.Path : null;
+            var mentions = await Mentions.FindAsync(git, scan.Project.Root, name, except, CancellationToken.None);
+            Post(new { type = "mentions", request, mentions });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or GitUnavailableException)
+        {
+            Post(new { type = "mentions", request, error = e.Message });
         }
     }
 

@@ -7,6 +7,8 @@ public sealed class BoardView
     public string Focus { get; init; } = "";
     /// <summary>The selected file or folder.</summary>
     public string? Selected { get; init; }
+    /// <summary>The part of the selected file picked on the map inside it.</summary>
+    public BoardPart? Part { get; init; }
     /// <summary>The commit selected on the history strip; "working" for the uncommitted changes.</summary>
     public string? Commit { get; init; }
     /// <summary>The commits counted by the activity lens.</summary>
@@ -31,8 +33,13 @@ public sealed record BoardRange(string? From, string? To, int Count, bool Latest
 /// <param name="Removed">The selection includes lines a diff shows as removed, which have no number.</param>
 public sealed record BoardReader(string Path, string? Commit, int[]? Visible, int[]? Selection, string? Text = null, bool Removed = false);
 
-/// <summary>A file or folder the human chose, when, and the HEAD at that moment.</summary>
-public sealed record Choice(string Path, DateTimeOffset At, string? Head);
+/// <summary>A part of a file picked on the map inside it: a declaration, a section, or a block of data declarations.</summary>
+/// <param name="Id">The outline's id, which with the path names it; none for a block or a section of code.</param>
+/// <param name="From">Its first line, with the comments that belong to it.</param>
+public sealed record BoardPart(string? Id, string Name, string Kind, int From, int To);
+
+/// <summary>A file or folder the human chose, and the part of a file, when, and the HEAD at that moment.</summary>
+public sealed record Choice(string Path, DateTimeOffset At, string? Head, BoardPart? Part = null);
 
 /// <summary>One thing a pointer outlines: a file or folder of the scan, optionally a range of a file's lines.</summary>
 /// <param name="Note">What the agent named, when it is not on the map and this is the nearest folder that is.</param>
@@ -74,10 +81,11 @@ public sealed class BoardState
 
     public void Update(BoardView view, string? head, DateTimeOffset now)
     {
-        if (view.Selected != Selected?.Path)
+        var part = view.Selected is null ? null : view.Part;
+        if (view.Selected != Selected?.Path || part != Selected?.Part)
         {
             if (Selected is not null) Remember(Selected);
-            Selected = view.Selected is null ? null : new Choice(view.Selected, now, head);
+            Selected = view.Selected is null ? null : new Choice(view.Selected, now, head, part);
         }
         var reader = view.Reader;
         if (reader?.Path != Reading?.Path || reader?.Commit != View.Reader?.Commit)
@@ -97,7 +105,7 @@ public sealed class BoardState
 
     void Remember(Choice choice)
     {
-        recent.RemoveAll(r => r.Path == choice.Path);
+        recent.RemoveAll(r => r.Path == choice.Path && r.Part == choice.Part);
         recent.Insert(0, choice);
         if (recent.Count > RecentLimit) recent.RemoveAt(recent.Count - 1);
     }

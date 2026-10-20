@@ -113,6 +113,7 @@ describe('board view', () => {
     expect(v).toEqual({
       focus: 'a',
       selected: 'a/x.gd',
+      part: null,
       commit: 'c3',
       range: { from: 'c1', to: 'c3', count: 3, latest: true },
       reader: { path: 'a/x.gd', commit: 'working', visible: [1, 40], selection: [12, 14], text: 'func _ready():', removed: true },
@@ -120,6 +121,12 @@ describe('board view', () => {
       fill: 'activity',
       theme: 'dark',
     })
+  })
+
+  it('reports the part picked inside the selected file, and only with it', () => {
+    const part = { path: 'a/x.gd', id: 'jump', name: 'jump', kind: 'function', from: 3, to: 9 }
+    expect(view({ selected: node('a/x.gd'), part }).part).toEqual({ id: 'jump', name: 'jump', kind: 'function', from: 3, to: 9 })
+    expect(view({ selected: node('a/y.gd'), part }).part).toBeNull()
   })
 
   it('has no range without history', () => {

@@ -51,8 +51,9 @@ static class McpCommand
         "was away: commits since the HEAD they last saw, the regions those touched, and who made them (agents appear as " +
         "co-authors). If the window showed it in the last few minutes, or no window is open, tell them in a line or two " +
         "before anything else. In a diff, line numbers count in the version named by lineNumbers and " +
-        "removed lines have none; rely on selectedText. show points at files, folders and lines (\"path:480-492\"); a file's " +
-        "summary outlines it, so you can point at a function or a section by its lines. At the end of a task, show the files " +
+        "removed lines have none; rely on selectedText. When the human picked a part of a file, or selected lines inside a " +
+        "function, get_selection names it (part, reader.symbol), so \"this\" can be a function. show points at files, folders, " +
+        "lines (\"path:480-492\") and symbols by the ids a file's summary outline gives (\"path#Class.method\"). At the end of a task, show the files " +
         "you changed. Every tool takes an optional project and otherwise uses the window the " +
         "human used last, so check the project in each reply.\n\n" +
         "A project description says what the project's parts are for and where they live: its systems with the paths they " +
@@ -106,8 +107,9 @@ static class McpCommand
                         Title = "What the human is looking at",
                         Description =
                             "What the human has selected on a FloorPlan map: the file or folder (with its measurements and last commit, " +
-                            "when it was selected and, if HEAD moved since, the HEAD at that time), the file in the reader with the lines in view and " +
-                            "any selected lines and text, the zoomed folder, the commit selected on the history strip, the history range, " +
+                            "when it was selected and, if HEAD moved since, the HEAD at that time) and the part of a file they picked on the " +
+                            "map inside it (part: its id, kind and lines), the file in the reader with the lines in view, any selected lines and " +
+                            "text, and the declaration or section around those lines (symbol), the zoom, the commit selected on the history strip, the history range, " +
                             "the last few selections, how long the human has left the window idle, the other open windows, and what " +
                             "landed while the human was away when the window shows that. Use it to resolve \"this\" or \"here\".",
                         ReadOnly = true,
@@ -116,7 +118,7 @@ static class McpCommand
                     }),
                 McpServerTool.Create(
                     async (
-                        [Description("Files or folders to outline: paths relative to the project root or your working folder, or absolute. Add \":480-492\" to a file to point at those lines.")] string[] paths,
+                        [Description("Files or folders to outline: paths relative to the project root or your working folder, or absolute. Add \":480-492\" to a file to point at those lines, or \"#Class.method\" to point at a declaration or section by the id its file's summary outline gives.")] string[] paths,
                         [Description("What the human reads under the map, e.g. \"Where saving reads the player's state\". The row shows its start and a click opens the rest, so lead with the point. Empty paths clear your pointer.")] string caption,
                         McpServer server,
                         [Description("Your name as the human should see it, when several agents share the board, e.g. \"Claude (save system)\".")] string? agent = null,
@@ -132,8 +134,8 @@ static class McpCommand
                             "Outlines files and folders on the human's FloorPlan map with a caption, instead of listing them in prose; " +
                             "every window on the project draws it. The pointer stays until you point again or the human dismisses it. " +
                             "Reports which paths were shown, which exist but are not on the map (ignored or untracked; their nearest " +
-                            "folder is outlined instead), which are not in the project, and whether any window is open at all; if none " +
-                            "is, describe the files in text.",
+                            "folder is outlined instead), which are not in the project or name a symbol their file does not declare, each " +
+                            "symbol with the lines it was shown as, and whether any window is open at all; if none is, describe the files in text.",
                         ReadOnly = false,
                         Destructive = false,
                         Idempotent = true,

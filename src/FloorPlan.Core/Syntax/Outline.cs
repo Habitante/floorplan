@@ -68,6 +68,19 @@ public static class Outlines
         return Grammars.For(path) is { } grammar ? CodeOutline.Of(grammar, text, lines) : null;
     }
 
+    /// <summary>The innermost declaration or section holding these lines.</summary>
+    public static OutlineSymbol? Around(FileOutline outline, int from, int to) =>
+        outline.All().Where(s => s.From <= from && to <= s.To).OrderBy(s => s.To - s.From).FirstOrDefault();
+
+    /// <summary>A symbol by its id: exactly, else ignoring case, else by its own name when only one has it.</summary>
+    public static OutlineSymbol? Find(FileOutline outline, string id)
+    {
+        var named = outline.All().Where(s => s.Id is not null).ToList();
+        return named.FirstOrDefault(s => s.Id == id)
+            ?? named.FirstOrDefault(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase))
+            ?? (named.Where(s => s.Name == id).ToList() is [var only] ? only : null);
+    }
+
     /// <summary>Reads and outlines a file; the note says why there is no outline when it matters.</summary>
     public static async Task<(FileOutline? Outline, string? Note)> ReadAsync(string fullPath, string path, CancellationToken cancellationToken)
     {

@@ -66,6 +66,20 @@ public class OutlineTests
     }
 
     [Fact]
+    public void Finds_a_symbol_by_its_id_or_its_own_name_and_the_one_around_some_lines()
+    {
+        var outline = Outline("scenes/player.gd", Player);
+
+        Assert.Equal("Step._init", Outlines.Find(outline, "Step._init")!.Id);
+        Assert.Equal("Step._init", Outlines.Find(outline, "step._INIT")!.Id);
+        Assert.Equal("Step._init", Outlines.Find(outline, "_init")!.Id);     // its own name, the only one
+        Assert.Null(Outlines.Find(outline, "nothing"));
+        Assert.Equal("_physics_process", Outlines.Around(outline, 19, 20)!.Id);
+        Assert.Equal("moving", Outlines.Around(outline, 26, 26)!.Name);         // between functions: their section
+        Assert.Null(Outlines.Around(outline, 4, 4));
+    }
+
+    [Fact]
     public void Python_folds_docstrings_to_their_first_line_and_keeps_decorators_with_their_function()
     {
         var outline = Outline("tools/export.py", """"

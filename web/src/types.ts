@@ -103,6 +103,8 @@ export interface BoardView {
   /** The folder the map is zoomed into; '' for the whole project. */
   focus: string
   selected: string | null
+  /** The part of the selected file picked on the map inside it. */
+  part: { id: string | null; name: string; kind: string; from: number; to: number } | null
   /** The commit selected on the history strip, 'working' for the uncommitted changes. */
   commit: string | null
   /** Oldest and newest commits counted by the activity lens. */

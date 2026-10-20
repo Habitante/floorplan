@@ -36,6 +36,26 @@ public class BoardTests
     }
 
     [Fact]
+    public void A_part_picked_inside_a_file_is_a_selection_of_its_own()
+    {
+        // The front end sends the part as boardView() writes it.
+        var view = JsonSerializer.Deserialize<BoardView>(
+            """{"focus":"scenes/player.gd","selected":"scenes/player.gd","part":{"id":"jump","name":"jump","kind":"function","from":10,"to":20}}""",
+            ScanJson.Options)!;
+        var jump = new BoardPart("jump", "jump", "function", 10, 20);
+        Assert.Equal(jump, view.Part);
+
+        var state = new BoardState();
+        state.Update(new BoardView { Selected = "scenes/player.gd" }, "h1", T0);
+        state.Update(view, "h1", T0.AddSeconds(5));
+        state.Update(new BoardView { Selected = "scenes/player.gd", Part = jump with { Id = "walk", Name = "walk" } }, "h1", T0.AddSeconds(9));
+
+        Assert.Equal("walk", state.Selected!.Part!.Id);
+        Assert.Equal(["jump", null], state.Recent.Select(r => r.Part?.Id));
+        Assert.All(state.Recent, r => Assert.Equal("scenes/player.gd", r.Path));
+    }
+
+    [Fact]
     public void Stamps_each_selection_with_its_time_and_head()
     {
         var state = new BoardState();

@@ -1,5 +1,5 @@
 import { contains, type Footprint, type Model, type Node } from './model'
-import type { Lens, Pointer, ReaderLines, ReaderTarget } from './state'
+import type { Lens, PartChoice, Pointer, ReaderLines, ReaderTarget } from './state'
 import type { BoardView, PointerItem } from './types'
 
 // The shared board, front-end side: what the human is looking at goes to the host for agents,
@@ -73,6 +73,8 @@ export function boardView(
   view: {
     focus: Node | null
     selected: Node | null
+    /** The part of the selected file picked on the map inside it. */
+    part?: PartChoice | null
     commit: number | 'working' | null
     range: [number, number]
     reader: ReaderTarget | null
@@ -88,6 +90,9 @@ export function boardView(
   return {
     focus: view.focus?.path ?? '',
     selected: view.selected?.path ?? null,
+    part: view.part && view.part.path === view.selected?.path
+      ? { id: view.part.id, name: view.part.name, kind: view.part.kind, from: view.part.from, to: view.part.to }
+      : null,
     commit: view.commit === null ? null : view.commit === 'working' ? 'working' : sha(view.commit),
     range: m.commits.length > 0 ? { from: sha(from), to: sha(to - 1), count: to - from, latest: to === m.commits.length } : null,
     reader: open && {

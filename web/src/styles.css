@@ -732,6 +732,8 @@ button.row:hover { background: var(--hover); }
 .related-count:hover { background: var(--hover); color: var(--ink); }
 .related-more { color: var(--ink-3); }
 .related-more:hover { color: var(--ink); }
+.related-none { color: var(--ink-3); }
+.related-name:disabled { color: var(--ink-3); cursor: default; }
 .related-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 .related-row .related-count { font-size: 12px; }
 

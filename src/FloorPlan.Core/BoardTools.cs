@@ -206,6 +206,7 @@ public sealed class BoardTools(
 
         var (result, error) = await AskAsync(targets[0], new BoardRequest { Op = "selection", Base = Folder }, cancellationToken);
         if (result is null) return Error(error!);
+        await NameSelectedSymbolAsync(result, cancellationToken);
         var others = open.Where(w => w.Project is not null && w != targets[0]).Select(w => new WindowReport(w.Project!, w.IdleSeconds, w.Focused)).ToList();
         if (others.Count > 0) result["otherWindows"] = JsonSerializer.SerializeToNode(others, ScanJson.Options);
         return new BoardToolResult(result.ToJsonString(ScanJson.Options), false);
@@ -218,13 +219,16 @@ public sealed class BoardTools(
         if (targets.Count == 0)
             return NoWindow(project, open, "so nobody saw the pointer; name the files in text, or call open if the human wants to see them.");
 
+        // Symbols named by id point at their lines.
+        var (written, symbols, unknown) = await ResolveSymbolsAsync(paths, targets[0].Project!, cancellationToken);
+
         // Every window on the project draws the pointer; the one used last also reveals it.
         JsonObject? report = null;
         string? error = null;
         int drawn = 0;
         for (int i = 0; i < targets.Count; i++)
         {
-            var request = new BoardRequest { Op = "show", Paths = paths, Caption = caption, Agent = agent, Base = Folder, Reveal = reveal && i == 0 };
+            var request = new BoardRequest { Op = "show", Paths = written, Caption = caption, Agent = agent, Base = Folder, Reveal = reveal && i == 0 };
             var (result, problem) = await AskAsync(targets[i], request, cancellationToken);
             if (result is null)
             {
@@ -236,6 +240,13 @@ public sealed class BoardTools(
         }
         if (report is null) return Error(error!);
         report["windows"] = drawn;
+        if (symbols.Count > 0) report["symbols"] = JsonSerializer.SerializeToNode(symbols, ScanJson.Options);
+        if (unknown.Count > 0)
+        {
+            var list = report["unknown"] as JsonArray ?? [];
+            foreach (var u in unknown) list.Add(u);
+            report["unknown"] = list;
+        }
         await ExplainOffMapAsync(report, cancellationToken);
         return new BoardToolResult(report.ToJsonString(ScanJson.Options), false);
     }
@@ -280,27 +291,95 @@ public sealed class BoardTools(
     /// </summary>
     static async Task<OutlineReport?> OutlineAsync(string root, string path, CancellationToken cancellationToken)
     {
-        if (!Outlines.Supports(path)) return null;
-        string full;
+        var (outline, note) = await ReadOutlineAsync(root, path, cancellationToken);
+        if (outline is not null) return BoardReports.Outline(outline);
+        return note is null ? null : new OutlineReport { Language = Grammars.For(path)?.Name ?? "markdown", Note = note };
+    }
+
+    /// <summary>A file of the project, outlined; the path is relative to the root and must stay inside it.</summary>
+    static async Task<(FileOutline? Outline, string? Note)> ReadOutlineAsync(string root, string path, CancellationToken cancellationToken)
+    {
+        if (!Outlines.Supports(path) || FileIn(root, path) is not { } full) return (null, null);
         try
         {
-            full = Path.GetFullPath(Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)));
+            return await Outlines.ReadAsync(full, path, cancellationToken);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return (null, null);
+        }
+    }
+
+    /// <summary>A path relative to the root, or absolute, as a file inside the project; null otherwise.</summary>
+    static string? FileIn(string root, string path)
+    {
+        try
+        {
+            var full = Path.GetFullPath(Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar)));
+            return !SameFolder(root, full) && Inside(root, full) && File.Exists(full) ? full : null;
         }
         catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
         {
             return null;
         }
-        if (SameFolder(root, full) || !Inside(root, full) || !File.Exists(full)) return null;
-        try
+    }
+
+    /// <summary>Names the declaration around the reader's selected lines, so "this" can be a function.</summary>
+    static async Task NameSelectedSymbolAsync(JsonObject selection, CancellationToken cancellationToken)
+    {
+        if (selection["reader"] is not JsonObject reader || selection["project"]?.GetValue<string>() is not { } root) return;
+        if (reader["path"]?.GetValue<string>() is not { } path || reader["selectedLines"] is not JsonArray { Count: 2 } lines) return;
+        // Line numbers count in the working file for the file and its uncommitted diff, not in a commit's diff.
+        if (reader["showing"]?.GetValue<string>() is not ("file" or "uncommitted diff")) return;
+        var (outline, _) = await ReadOutlineAsync(root, path, cancellationToken);
+        if (outline is null || Outlines.Around(outline, lines[0]!.GetValue<int>(), lines[1]!.GetValue<int>()) is not { } symbol) return;
+        reader["symbol"] = JsonSerializer.SerializeToNode(new BoardPart(symbol.Id, symbol.Name, symbol.Kind, symbol.From, symbol.To), ScanJson.Options);
+    }
+
+    /// <summary>
+    /// Points "path#id" at the symbol's lines, from the file's outline: an id from a summary's
+    /// outline, or a declaration's own name when the file has only one by that name. "#L480" stays
+    /// a line, and a path that names no file is left for the window to report.
+    /// </summary>
+    async Task<(List<string> Paths, List<string> Symbols, List<string> Unknown)> ResolveSymbolsAsync(
+        IReadOnlyList<string> paths, string root, CancellationToken cancellationToken)
+    {
+        var written = new List<string>(paths.Count);
+        var symbols = new List<string>();
+        var unknown = new List<string>();
+        foreach (var path in paths)
         {
-            var (outline, note) = await Outlines.ReadAsync(full, path, cancellationToken);
-            if (outline is not null) return BoardReports.Outline(outline);
-            return note is null ? null : new OutlineReport { Language = Grammars.For(path)?.Name ?? "markdown", Note = note };
+            var hash = path.LastIndexOf('#');
+            if (hash <= 0 || hash == path.Length - 1 || BoardService.SplitLines(path).From is not null)
+            {
+                written.Add(path);
+                continue;
+            }
+            var (file, id) = (path[..hash], path[(hash + 1)..]);
+            // The file, relative to the agent's folder or the root, or absolute.
+            var relative = new[] { Path.Combine(Folder, file), Path.Combine(root, file) }
+                .Select(p => { try { return Path.GetFullPath(p); } catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException) { return null; } })
+                .Where(p => p is not null && File.Exists(p) && Inside(root, p))
+                .Select(p => Path.GetRelativePath(root, p!).Replace(Path.DirectorySeparatorChar, '/'))
+                .FirstOrDefault();
+            if (relative is null)
+            {
+                written.Add(path);
+                continue;
+            }
+            var (outline, _) = await ReadOutlineAsync(root, relative, cancellationToken);
+            if (outline is not null && Outlines.Find(outline, id) is { } symbol)
+            {
+                var lines = $"{relative}:{symbol.From}-{symbol.To}";
+                written.Add(lines);
+                symbols.Add($"{path} = {lines}");
+            }
+            else
+            {
+                unknown.Add(path);
+            }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return null;
-        }
+        return (written, symbols, unknown);
     }
 
     const string NoDescription =

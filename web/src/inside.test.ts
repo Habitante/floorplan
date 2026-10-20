@@ -30,7 +30,7 @@ describe('the map inside a file', () => {
     expect(focus.value?.path).toBe('scenes')
     expect(selected.value?.path).toBe('scenes/player.gd')
     // Reading the file, as clicking a part does, keeps its parts in view.
-    selectedPart.value = { path: 'scenes/player.gd', id: 'jump', from: 3, to: 4 }
+    selectedPart.value = { path: 'scenes/player.gd', id: 'jump', name: 'jump', kind: 'function', from: 3, to: 4 }
     openReader(node('scenes/player.gd'))
     expect(inside.value?.path).toBe('scenes/player.gd')
     expect(selectedPart.value?.id).toBe('jump')
